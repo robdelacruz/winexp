@@ -17,14 +17,18 @@ typedef struct {
 } exp_t;
 
 typedef struct {
+    arena_t *arena;
     exp_t *base;
     short cap;
     short len;
+
+    strtbl_t strings;
+    strtbl_t cats;
 } exptbl_t;
 
 int file_exists(const char *file);
 void load_expense_file(const char *srcfile);
-static exp_t read_expense(char *buf);
+static exp_t read_expense(char *buf, exptbl_t *xps);
 
 static void chomp(char *buf);
 static char *skip_ws(char *startp);
@@ -35,10 +39,8 @@ short exptbl_add(exptbl_t *tbl, exp_t exp);
 void exptbl_replace(exptbl_t *tbl, short idx, exp_t exp);
 exp_t *exptbl_get(exptbl_t *tbl, short idx);
 
-arena_t arena1;
+arena_t main_arena;
 exptbl_t xps;
-strtbl_t expense_strings;
-strtbl_t cats;
 
 int main(int argc, char *argv[]) {
     const char *expenses_text_file;
@@ -55,10 +57,8 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    arena1 = new_arena(SIZE_LARGE);
-    expense_strings = new_strtbl(&arena1, 15000);
-    cats = new_strtbl(&arena1, 50);
-    xps = new_exptbl(&arena1, 15000);
+    main_arena = new_arena(SIZE_LARGE);
+    xps = new_exptbl(&main_arena, 15000);
 
     printf("load_expense_file()\n");
     load_expense_file(expenses_text_file);
@@ -72,23 +72,24 @@ int main(int argc, char *argv[]) {
     load_expense_file(expenses_text_file);
     printf("Number of expenses read: %d\n", xps.len);
 
-//    printf("expense_strings:\n");
-//    for (int i=1; i < expense_strings.len; i++) {
-//        str_t s = strtbl_get(&expense_strings, i);
-//        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
-//    }
-    printf("cats:\n");
-    for (int i=1; i < cats.len; i++) {
-        str_t s = strtbl_get(&cats, i);
+/*
+    printf("expense_strings:\n");
+    for (int i=1; i < xps.strings.len; i++) {
+        str_t s = strtbl_get(&xps.strings, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
-
+*/
     printf("xps:\n");
     for (int i=0; i < xps.len; i++) {
         exp_t xp = xps.base[i];
-        str_t desc = strtbl_get(&expense_strings, xp.descid);
-        str_t catname = strtbl_get(&cats, xp.catid);
+        str_t desc = strtbl_get(&xps.strings, xp.descid);
+        str_t catname = strtbl_get(&xps.cats, xp.catid);
         printf("%d: '%.*s' %.2f '%.*s'\n", i, desc.len, desc.bytes, xp.amt, catname.len, catname.bytes);
+    }
+    printf("cats:\n");
+    for (int i=1; i < xps.cats.len; i++) {
+        str_t s = strtbl_get(&xps.cats, i);
+        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
 }
 
@@ -102,9 +103,12 @@ int file_exists(const char *file) {
 
 exptbl_t new_exptbl(arena_t *a, short cap) {
     exptbl_t tbl;
+    tbl.arena = a;
     tbl.base = arena_alloc(a, sizeof(exp_t) * cap);
     tbl.len = 0;
     tbl.cap = cap;
+    tbl.strings = new_strtbl(a, 512);
+    tbl.cats = new_strtbl(a, 8);
     return tbl;
 }
 short exptbl_add(exptbl_t *tbl, exp_t exp) {
@@ -136,10 +140,10 @@ void load_expense_file(const char *srcfile) {
         return;
     }
 
-//    arena_reset(&arena1);
+//    arena_reset(xps.arena);
     xps.len = 0;
-    strtbl_reset(&expense_strings);
-    strtbl_reset(&cats);
+    strtbl_reset(&xps.strings);
+    strtbl_reset(&xps.cats);
 
     while (1) {
         errno = 0;
@@ -151,7 +155,7 @@ void load_expense_file(const char *srcfile) {
         if (strlen(buf) == 0)
             continue;
 
-        exp_t exp = read_expense(buf);
+        exp_t exp = read_expense(buf, &xps);
         exptbl_add(&xps, exp);
     }
 
@@ -159,8 +163,11 @@ void load_expense_file(const char *srcfile) {
 }
 
 
-static exp_t read_expense(char *buf) {
+static exp_t read_expense(char *buf, exptbl_t *xps) {
     exp_t retexp;
+    arena_t *arena = xps->arena;
+    strtbl_t *strings = &xps->strings;
+    strtbl_t *cats = &xps->cats;
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee
@@ -181,7 +188,7 @@ static exp_t read_expense(char *buf) {
     // description
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.descid = strtbl_add(&expense_strings, str_new(&arena1, pfield));
+    retexp.descid = strtbl_add(strings, str_new(arena, pfield));
 
     // amount
     pfield = nextp;
@@ -191,9 +198,9 @@ static exp_t read_expense(char *buf) {
     // category
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.catid = strtbl_find(&cats, (str_t){pfield, strlen(pfield)});
+    retexp.catid = strtbl_find(cats, (str_t){pfield, strlen(pfield)});
     if (retexp.catid == 0) {
-        retexp.catid = strtbl_add(&cats, str_new(&arena1, pfield));
+        retexp.catid = strtbl_add(cats, str_new(arena, pfield));
     }
 
     return retexp;

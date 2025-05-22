@@ -49,8 +49,8 @@ typedef struct {
 
 arena_t new_arena(unsigned long cap);
 void free_arena(arena_t a);
-void *arena_alloc(arena_t *a, unsigned long size);
 void arena_reset(arena_t *a);
+void *arena_alloc(arena_t *a, unsigned long size);
 
 #define STR(sz) (str_t){(char *)sz, (countof(sz)-1)}
 typedef struct {
@@ -62,6 +62,7 @@ str_t str_new(arena_t *a, char *sz);
 str_t str_dup(arena_t *a, str_t src);
 
 typedef struct {
+    arena_t *arena;
     str_t *base;
     short cap;
     short len;

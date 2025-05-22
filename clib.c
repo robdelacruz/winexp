@@ -42,6 +42,9 @@ arena_t new_arena(unsigned long cap) {
 void free_arena(arena_t a) {
     free(a.base);
 }
+void arena_reset(arena_t *a) {
+    a->pos = 0;
+}
 void *arena_alloc(arena_t *a, unsigned long size) {
     if (a->pos + size > a->cap)
         panic("arena_alloc() not enough memory");
@@ -50,9 +53,6 @@ void *arena_alloc(arena_t *a, unsigned long size) {
     a->pos += size;
     return (void*) p;
 //    return malloc(size);
-}
-void arena_reset(arena_t *a) {
-    a->pos = 0;
 }
 
 str_t str_new(arena_t *a, char *sz) {
@@ -73,7 +73,11 @@ str_t str_dup(arena_t *a, str_t src) {
 }
 
 strtbl_t new_strtbl(arena_t *a, short cap) {
+    if (cap == 0)
+        cap = SIZE_TINY;
+
     strtbl_t st;
+    st.arena = a;
     st.base = arena_alloc(a, sizeof(str_t) * cap);
     st.base[0] = STR("");
     st.len = 1;
@@ -85,11 +89,26 @@ void strtbl_reset(strtbl_t *st) {
     st->len = 1;
 }
 short strtbl_add(strtbl_t *st, str_t s) {
-    assert(st->len < st->cap);
+    assert(st->cap > 0);
+    assert(st->len >= 0);
+
+    // If we're out of space, double the capacity.
+    // Create a new memory block with double capacity and copy existing string table to it.
     if (st->len >= st->cap) {
-        fprintf(stderr, "strtbl_add() Exceeded capacity %d\n", st->cap);
-        abort();
+        if (st->cap == SHRT_MAX) {
+            fprintf(stderr, "strtbl_add() Maximum capacity reached %d\n", st->cap);
+            abort();
+        }
+        int newcap = (int)st->cap * 2;
+        if (newcap > SHRT_MAX)
+            newcap = SHRT_MAX;
+
+        str_t *newbase = arena_alloc(st->arena, sizeof(str_t) * newcap);
+        memcpy(newbase, st->base, sizeof(str_t) * st->cap);
+        st->base = newbase;
+        st->cap = newcap;
     }
+
     st->base[st->len] = s;
     st->len++;
     return st->len-1;
