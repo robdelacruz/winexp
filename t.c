@@ -11,15 +11,15 @@
 
 typedef struct {
     time_t date;
-    u16 descid;
+    short descid;
     float amt;
-    u8 catid;
+    short catid;
 } exp_t;
 
 typedef struct {
     exp_t *base;
-    u16 cap;
-    u16 len;
+    short cap;
+    short len;
 } exptbl_t;
 
 int file_exists(const char *file);
@@ -30,10 +30,10 @@ static void chomp(char *buf);
 static char *skip_ws(char *startp);
 static char *next_field(char *startp);
 
-exptbl_t new_exptbl(arena_t *a, u16 cap);
-u16 exptbl_add(exptbl_t *tbl, exp_t exp);
-void exptbl_replace(exptbl_t *tbl, u16 idx, exp_t exp);
-exp_t *exptbl_get(exptbl_t *tbl, u16 idx);
+exptbl_t new_exptbl(arena_t *a, short cap);
+short exptbl_add(exptbl_t *tbl, exp_t exp);
+void exptbl_replace(exptbl_t *tbl, short idx, exp_t exp);
+exp_t *exptbl_get(exptbl_t *tbl, short idx);
 
 arena_t arena1;
 exptbl_t xps;
@@ -74,21 +74,21 @@ int main(int argc, char *argv[]) {
 
 //    printf("expense_strings:\n");
 //    for (int i=1; i < expense_strings.len; i++) {
-//        s8 s = strtbl_get(&expense_strings, i);
-//        printf("[%d] '%.*s'\n", i, s.len, s.data);
+//        str_t s = strtbl_get(&expense_strings, i);
+//        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
 //    }
     printf("cats:\n");
     for (int i=1; i < cats.len; i++) {
-        s8 s = strtbl_get(&cats, i);
-        printf("[%d] '%.*s'\n", i, s.len, s.data);
+        str_t s = strtbl_get(&cats, i);
+        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
 
     printf("xps:\n");
     for (int i=0; i < xps.len; i++) {
         exp_t xp = xps.base[i];
-        s8 desc = strtbl_get(&expense_strings, xp.descid);
-        s8 catname = strtbl_get(&cats, xp.catid);
-        printf("%d: '%.*s' %.2f '%.*s'\n", i, desc.len, desc.data, xp.amt, catname.len, catname.data);
+        str_t desc = strtbl_get(&expense_strings, xp.descid);
+        str_t catname = strtbl_get(&cats, xp.catid);
+        printf("%d: '%.*s' %.2f '%.*s'\n", i, desc.len, desc.bytes, xp.amt, catname.len, catname.bytes);
     }
 }
 
@@ -100,26 +100,26 @@ int file_exists(const char *file) {
         return 0;
 }
 
-exptbl_t new_exptbl(arena_t *a, u16 cap) {
+exptbl_t new_exptbl(arena_t *a, short cap) {
     exptbl_t tbl;
     tbl.base = arena_alloc(a, sizeof(exp_t) * cap);
     tbl.len = 0;
     tbl.cap = cap;
     return tbl;
 }
-u16 exptbl_add(exptbl_t *tbl, exp_t exp) {
+short exptbl_add(exptbl_t *tbl, exp_t exp) {
     assert(tbl->len < tbl->cap);
     tbl->base[tbl->len] = exp;
     tbl->len++;
     return tbl->len-1;
 }
-void exptbl_replace(exptbl_t *tbl, u16 idx, exp_t exp) {
+void exptbl_replace(exptbl_t *tbl, short idx, exp_t exp) {
     assert(idx < tbl->len);
     if (idx >= tbl->len)
         return;
     tbl->base[idx] = exp;
 }
-exp_t *exptbl_get(exptbl_t *tbl, u16 idx) {
+exp_t *exptbl_get(exptbl_t *tbl, short idx) {
     if (idx >= tbl->len)
         return NULL;
     return &tbl->base[idx];
@@ -181,7 +181,7 @@ static exp_t read_expense(char *buf) {
     // description
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.descid = strtbl_add(&expense_strings, s8_new(&arena1, pfield));
+    retexp.descid = strtbl_add(&expense_strings, str_new(&arena1, pfield));
 
     // amount
     pfield = nextp;
@@ -191,9 +191,9 @@ static exp_t read_expense(char *buf) {
     // category
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.catid = strtbl_find(&cats, (s8){pfield, strlen(pfield)});
+    retexp.catid = strtbl_find(&cats, (str_t){pfield, strlen(pfield)});
     if (retexp.catid == 0) {
-        retexp.catid = strtbl_add(&cats, s8_new(&arena1, pfield));
+        retexp.catid = strtbl_add(&cats, str_new(&arena1, pfield));
     }
 
     return retexp;

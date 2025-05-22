@@ -25,7 +25,7 @@ void print_error(const char *s) {
         fprintf(stderr, "%s\n", strerror(errno));
 }
 
-arena_t new_arena(u64 cap) {
+arena_t new_arena(unsigned long cap) {
     arena_t a; 
 
     if (cap == 0)
@@ -42,7 +42,7 @@ arena_t new_arena(u64 cap) {
 void free_arena(arena_t a) {
     free(a.base);
 }
-void *arena_alloc(arena_t *a, usize size) {
+void *arena_alloc(arena_t *a, unsigned long size) {
     if (a->pos + size > a->cap)
         panic("arena_alloc() not enough memory");
 
@@ -55,59 +55,59 @@ void arena_reset(arena_t *a) {
     a->pos = 0;
 }
 
-s8 s8_new(arena_t *a, char *s) {
-    s8 retstr;
-    retstr.len = strlen(s);
-    retstr.data = arena_alloc(a, retstr.len+1);
-    strncpy(retstr.data, s, retstr.len);
-    retstr.data[retstr.len] = 0;
+str_t str_new(arena_t *a, char *sz) {
+    str_t retstr;
+    retstr.len = strlen(sz);
+    retstr.bytes = arena_alloc(a, retstr.len+1);
+    strncpy(retstr.bytes, sz, retstr.len);
+    retstr.bytes[retstr.len] = 0;
     return retstr;
 }
-s8 s8_dup(arena_t *a, s8 src) {
-    s8 retstr;
+str_t str_dup(arena_t *a, str_t src) {
+    str_t retstr;
     retstr.len = src.len;
-    retstr.data = arena_alloc(a, src.len+1);
-    strncpy((char*) retstr.data, (char*) src.data, src.len);
-    retstr.data[retstr.len] = 0;
+    retstr.bytes = arena_alloc(a, src.len+1);
+    strncpy((char*) retstr.bytes, (char*) src.bytes, src.len);
+    retstr.bytes[retstr.len] = 0;
     return retstr;
 }
 
-strtbl_t new_strtbl(arena_t *a, u16 cap) {
+strtbl_t new_strtbl(arena_t *a, short cap) {
     strtbl_t st;
-    st.base = arena_alloc(a, sizeof(s8) * cap);
-    st.base[0] = s8("");
+    st.base = arena_alloc(a, sizeof(str_t) * cap);
+    st.base[0] = STR("");
     st.len = 1;
     st.cap = cap;
     return st;
 }
 void strtbl_reset(strtbl_t *st) {
-    st->base[0] = s8("");
+    st->base[0] = STR("");
     st->len = 1;
 }
-u16 strtbl_add(strtbl_t *st, s8 str) {
+short strtbl_add(strtbl_t *st, str_t s) {
     assert(st->len < st->cap);
     if (st->len >= st->cap) {
         fprintf(stderr, "strtbl_add() Exceeded capacity %d\n", st->cap);
         abort();
     }
-    st->base[st->len] = str;
+    st->base[st->len] = s;
     st->len++;
     return st->len-1;
 }
-void strtbl_replace(strtbl_t *st, u16 idx, s8 str) {
+void strtbl_replace(strtbl_t *st, short idx, str_t s) {
     assert(idx < st->len);
     if (idx >= st->len)
         return;
-    st->base[idx] = str;
+    st->base[idx] = s;
 }
-s8 strtbl_get(strtbl_t *st, u16 idx) {
+str_t strtbl_get(strtbl_t *st, short idx) {
     if (idx >= st->len)
-        return s8("");
+        return STR("");
     return st->base[idx];
 }
-u16 strtbl_find(strtbl_t *st, s8 str) {
+short strtbl_find(strtbl_t *st, str_t s) {
     for (int i=1; i < st->len; i++) {
-        if (strcmp(str.data, st->base[i].data) == 0)
+        if (strcmp(s.bytes, st->base[i].bytes) == 0)
             return i;
     }
     return 0;
