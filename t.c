@@ -34,13 +34,13 @@ static void chomp(char *buf);
 static char *skip_ws(char *startp);
 static char *next_field(char *startp);
 
-exptbl_t new_exptbl(arena_t *a, short cap);
-short exptbl_add(exptbl_t *tbl, exp_t exp);
-void exptbl_replace(exptbl_t *tbl, short idx, exp_t exp);
-exp_t *exptbl_get(exptbl_t *tbl, short idx);
+void init_exptbl(exptbl_t *et, arena_t *a, short cap);
+short add_exp(exptbl_t *et, exp_t exp);
+void replace_exp(exptbl_t *et, short idx, exp_t exp);
+exp_t *get_exp(exptbl_t *et, short idx);
 
 arena_t main_arena;
-exptbl_t xps;
+exptbl_t exps;
 
 int main(int argc, char *argv[]) {
     const char *expenses_text_file;
@@ -57,38 +57,29 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    main_arena = new_arena(SIZE_LARGE);
-    xps = new_exptbl(&main_arena, 15000);
+    init_arena(&main_arena, SIZE_LARGE);
 
     printf("load_expense_file()\n");
     load_expense_file(expenses_text_file);
-    printf("Number of expenses read: %d\n", xps.len);
-
-    printf("load_expense_file()\n");
-    load_expense_file(expenses_text_file);
-    printf("Number of expenses read: %d\n", xps.len);
-
-    printf("load_expense_file()\n");
-    load_expense_file(expenses_text_file);
-    printf("Number of expenses read: %d\n", xps.len);
+    printf("Number of expenses read: %d\n", exps.len);
 
 /*
     printf("expense_strings:\n");
-    for (int i=1; i < xps.strings.len; i++) {
-        str_t s = strtbl_get(&xps.strings, i);
+    for (int i=1; i < exps.strings.len; i++) {
+        str_t s = strtbl_get(&exps.strings, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
 */
-    printf("xps:\n");
-    for (int i=0; i < xps.len; i++) {
-        exp_t xp = xps.base[i];
-        str_t desc = strtbl_get(&xps.strings, xp.descid);
-        str_t catname = strtbl_get(&xps.cats, xp.catid);
+    printf("exps:\n");
+    for (int i=0; i < exps.len; i++) {
+        exp_t xp = exps.base[i];
+        str_t desc = strtbl_get(&exps.strings, xp.descid);
+        str_t catname = strtbl_get(&exps.cats, xp.catid);
         printf("%d: '%.*s' %.2f '%.*s'\n", i, desc.len, desc.bytes, xp.amt, catname.len, catname.bytes);
     }
     printf("cats:\n");
-    for (int i=1; i < xps.cats.len; i++) {
-        str_t s = strtbl_get(&xps.cats, i);
+    for (int i=1; i < exps.cats.len; i++) {
+        str_t s = strtbl_get(&exps.cats, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
 }
@@ -101,32 +92,49 @@ int file_exists(const char *file) {
         return 0;
 }
 
-exptbl_t new_exptbl(arena_t *a, short cap) {
-    exptbl_t tbl;
-    tbl.arena = a;
-    tbl.base = arena_alloc(a, sizeof(exp_t) * cap);
-    tbl.len = 0;
-    tbl.cap = cap;
-    tbl.strings = new_strtbl(a, 512);
-    tbl.cats = new_strtbl(a, 8);
-    return tbl;
+void init_exptbl(exptbl_t *et, arena_t *a, short cap) {
+    et->arena = a;
+    et->base = aalloc(a, sizeof(exp_t) * cap);
+    et->len = 0;
+    et->cap = cap;
+    init_strtbl(&et->strings, a, 512);
+    init_strtbl(&et->cats, a, 8);
 }
-short exptbl_add(exptbl_t *tbl, exp_t exp) {
-    assert(tbl->len < tbl->cap);
-    tbl->base[tbl->len] = exp;
-    tbl->len++;
-    return tbl->len-1;
+short add_exp(exptbl_t *et, exp_t exp) {
+    assert(et->cap > 0);
+    assert(et->len >= 0);
+
+    // If out of space, double the capacity.
+    // Create a new memory block with double capacity and copy existing string table to it.
+    if (et->len >= et->cap) {
+        if (et->cap == SHRT_MAX) {
+            fprintf(stderr, "add_exp() Maximum capacity reached %d\n", et->cap);
+            abort();
+        }
+        int newcap = (int)et->cap * 2;
+        if (newcap > SHRT_MAX)
+            newcap = SHRT_MAX;
+
+        exp_t *newbase = aalloc(et->arena, sizeof(exp_t) * newcap);
+        memcpy(newbase, et->base, sizeof(exp_t) * et->cap);
+        et->base = newbase;
+        et->cap = newcap;
+    }
+
+    et->base[et->len] = exp;
+    et->len++;
+    return et->len-1;
 }
-void exptbl_replace(exptbl_t *tbl, short idx, exp_t exp) {
-    assert(idx < tbl->len);
-    if (idx >= tbl->len)
+void replace_exp(exptbl_t *et, short idx, exp_t exp) {
+    assert(idx < et->len);
+    if (idx >= et->len)
         return;
-    tbl->base[idx] = exp;
+    et->base[idx] = exp;
 }
-exp_t *exptbl_get(exptbl_t *tbl, short idx) {
-    if (idx >= tbl->len)
+exp_t *get_exp(exptbl_t *et, short idx) {
+    if (idx >= et->len)
         return NULL;
-    return &tbl->base[idx];
+    return &et->base[idx];
 }
 
 #define BUFLINE_SIZE 1000
@@ -140,10 +148,8 @@ void load_expense_file(const char *srcfile) {
         return;
     }
 
-//    arena_reset(xps.arena);
-    xps.len = 0;
-    strtbl_reset(&xps.strings);
-    strtbl_reset(&xps.cats);
+    reset_arena(&main_arena);
+    init_exptbl(&exps, &main_arena, 1000);
 
     while (1) {
         errno = 0;
@@ -155,8 +161,8 @@ void load_expense_file(const char *srcfile) {
         if (strlen(buf) == 0)
             continue;
 
-        exp_t exp = read_expense(buf, &xps);
-        exptbl_add(&xps, exp);
+        exp_t exp = read_expense(buf, &exps);
+        add_exp(&exps, exp);
     }
 
     fclose(f);
@@ -188,7 +194,7 @@ static exp_t read_expense(char *buf, exptbl_t *xps) {
     // description
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.descid = strtbl_add(strings, str_new(arena, pfield));
+    retexp.descid = strtbl_add(strings, new_str(arena, pfield));
 
     // amount
     pfield = nextp;
@@ -200,7 +206,7 @@ static exp_t read_expense(char *buf, exptbl_t *xps) {
     nextp = next_field(pfield);
     retexp.catid = strtbl_find(cats, (str_t){pfield, strlen(pfield)});
     if (retexp.catid == 0) {
-        retexp.catid = strtbl_add(cats, str_new(arena, pfield));
+        retexp.catid = strtbl_add(cats, new_str(arena, pfield));
     }
 
     return retexp;
