@@ -122,8 +122,6 @@ short strtbl_find(strtbl_t *st, str_t s) {
     return 0;
 }
 
-char* strptime(const char *buf, const char *fmt, struct tm *tm);
-
 time_t date_today() {
     return time(NULL);
 }
@@ -158,7 +156,6 @@ time_t date_from_iso(char *isodate) {
     }
     return t;
 }
-/*
 void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len) {
     struct tm tm;
     localtime_r(&dt, &tm);
@@ -169,7 +166,7 @@ void date_to_iso(time_t dt, char *buf, size_t buf_len) {
     localtime_r(&dt, &tm);
     strftime(buf, buf_len, "%F", &tm);
 }
-void date_to_cal(time_t dt, int *retyear, int *retmonth, int *retday) {
+void date_to_cal(time_t dt, short *retyear, short *retmonth, short *retday) {
     struct tm tm;
     localtime_r(&dt, &tm);
     if (retyear)
@@ -180,7 +177,7 @@ void date_to_cal(time_t dt, int *retyear, int *retmonth, int *retday) {
         *retday = tm.tm_mday;
 }
 time_t date_prev_month(time_t dt) {
-    int year, month, day;
+    short year, month, day;
     date_to_cal(dt, &year, &month, &day);
 
     if (year == 0)
@@ -192,7 +189,7 @@ time_t date_prev_month(time_t dt) {
         return date_from_cal(year, month-1, day);
 }
 time_t date_next_month(time_t dt) {
-    int year, month, day;
+    short year, month, day;
     date_to_cal(dt, &year, &month, &day);
 
     if (month == 12)
@@ -200,7 +197,6 @@ time_t date_next_month(time_t dt) {
     else
         return date_from_cal(year, month+1, day);
 }
-*/
 time_t date_prev_day(time_t dt) {
     return dt - 24*60*60;
 }

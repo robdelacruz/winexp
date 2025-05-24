@@ -1,14 +1,22 @@
 CC=gcc
 WINDRES=windres
 
-OBJECTS=t.o clib.o strptime.o
+EXE=t
+OBJECTS=t.o clib.o
 
 INCS=
 LIBS=
-CFLAGS=-std=gnu99 -Wall -Werror -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable $(INCS)
+CFLAGS=-std=gnu99 -Wall -Werror
+CFLAGS+= -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable $(INCS)
 LDFLAGS=$(LIBS)
 
-all: t.exe
+ifeq ($(OS), Windows_NT)
+	EXE=t.exe
+	OBJECTS+= strptime.o
+	CFLAGS+= -DWINDOWS
+endif
+
+all: $(EXE)
 
 %.o: %.c
 	$(CC) -c $(CFLAGS) -o $@ $<
@@ -17,5 +25,5 @@ t.exe: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -rf t.exe $(OBJECTS)
+	rm -rf $(EXE) $(OBJECTS)
 

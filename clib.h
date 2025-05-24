@@ -7,6 +7,11 @@
 #include <stdio.h>
 #include <time.h>
 
+#ifdef WINDOWS
+char* strptime(const char *buf, const char *fmt, struct tm *tm);
+#define localtime_r(t, tm) (localtime_s(tm, t) == 0 ? tm : NULL)
+#endif
+
 #define SIZE_MB      1024*1024
 #define SIZE_TINY    512
 #define SIZE_SMALL   1024
@@ -78,11 +83,11 @@ short strtbl_find(strtbl_t *st, str_t s);
 time_t date_today();
 time_t date_from_cal(short year, short month, short day);
 time_t date_from_iso(char *isodate);
-////void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len);
-//void date_to_iso(time_t dt, char *buf, size_t buf_len);
-//void date_to_cal(time_t dt, int *retyear, int *retmonth, int *retday);
-//time_t date_prev_month(time_t dt);
-//time_t date_next_month(time_t dt);
+void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len);
+void date_to_iso(time_t dt, char *buf, size_t buf_len);
+void date_to_cal(time_t dt, short *retyear, short *retmonth, short *retday);
+time_t date_prev_month(time_t dt);
+time_t date_next_month(time_t dt);
 time_t date_prev_day(time_t dt);
 time_t date_next_day(time_t dt);
 

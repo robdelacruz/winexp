@@ -40,6 +40,7 @@ void replace_exp(exptbl_t *et, short idx, exp_t exp);
 exp_t *get_exp(exptbl_t *et, short idx);
 
 arena_t main_arena;
+arena_t scratch_arena;
 exptbl_t exps;
 
 int main(int argc, char *argv[]) {
@@ -57,19 +58,40 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    init_arena(&scratch_arena, SIZE_MEDIUM);
     init_arena(&main_arena, SIZE_LARGE);
-
-    printf("load_expense_file()\n");
     load_expense_file(expenses_text_file);
-    printf("Number of expenses read: %d\n", exps.len);
 
-/*
+    time_t today = date_today();
+    short y, m, d;
+    date_to_cal(today, &y, &m, &d);
+    time_t start_month = date_from_cal(y, m, 1);
+    time_t next_month = date_next_month(start_month);
+
+    char sdate[ISO_DATE_LEN+1];
+    date_to_iso(start_month, sdate, sizeof(sdate));
+    printf("Date range: %s - ", sdate);
+    date_to_iso(next_month, sdate, sizeof(sdate));
+    printf("%s\n\n", sdate);
+
+    for (int i=0; i < exps.len; i++) {
+        exp_t xp = exps.base[i];
+        if (xp.date >= start_month && xp.date < next_month) {
+            str_t desc = strtbl_get(&exps.strings, xp.descid);
+            str_t catname = strtbl_get(&exps.cats, xp.catid);
+            date_to_iso(xp.date, sdate, sizeof(sdate));
+
+            printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
+        }
+    }
+}
+
+void print_tables() {
     printf("expense_strings:\n");
     for (int i=1; i < exps.strings.len; i++) {
         str_t s = strtbl_get(&exps.strings, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
-*/
     printf("exps:\n");
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
@@ -185,7 +207,6 @@ static exp_t read_expense(char *buf, exptbl_t *xps) {
     pfield = buf;
     nextp = next_field(pfield);
     retexp.date = date_from_iso(pfield);
-    retexp.date = 0;
 
     // skip time field
     pfield = nextp;
