@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <regex.h>
 #include "clib.h"
 
 typedef struct {
@@ -39,20 +40,39 @@ short add_exp(exptbl_t *et, exp_t exp);
 void replace_exp(exptbl_t *et, short idx, exp_t exp);
 exp_t *get_exp(exptbl_t *et, short idx);
 
+int is_cat(char *s);
+int is_yyyy(char *s);
+int is_yyyy_mm(char *s);
+int is_yyyy_mm_dd(char *s);
+
 arena_t main_arena;
 arena_t scratch_arena;
 exptbl_t exps;
 
+regex_t reg_yyyy, reg_yyyy_mm, reg_yyyy_mm_dd;
+
 int main(int argc, char *argv[]) {
-    const char *expenses_text_file;
+    char *expenses_text_file=NULL;
+    char *argcat=NULL;
+    char *startdate=NULL, *enddate=NULL;
+    char *yyyy=NULL, *yyyy_mm=NULL, *yyyy_mm_dd=NULL;
+    int iarg;
+    int z;
+
+    z = regcomp(&reg_yyyy, "^[0-9]{4}$", 0);
+    assert(z == 0);
+    z = regcomp(&reg_yyyy_mm, "^[0-9]{4}-[0-9]{2}$", 0);
+    assert(z == 0);
+    z = regcomp(&reg_yyyy_mm_dd, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", 0);
+    assert(z == 0);
 
     if (argc < 2) {
         printf("Usage: %s <expenses_text_file>\n\n", argv[0]);
         exit(0);
     }
 
-    expenses_text_file = argv[1];
-
+    iarg = 1;
+    expenses_text_file = argv[iarg];
     if (!file_exists(expenses_text_file)) {
         fprintf(stderr, "Expense file '%s' not found.\n", expenses_text_file);
         exit(1);
@@ -112,6 +132,27 @@ int file_exists(const char *file) {
         return 1;
     else
         return 0;
+}
+
+int is_cat(char *s) {
+    if (is_yyyy(s) || is_yyyy_mm(s) || is_yyyy_mm_dd(s))
+        return 0;
+    return 1;
+}
+int is_yyyy(char *s) {
+    int z = regexec(&reg_yyyy, s, 0, NULL, 0);
+    if (z == 0) return 1; // match
+    return 0;
+}
+int is_yyyy_mm(char *s) {
+    int z = regexec(&reg_yyyy_mm, s, 0, NULL, 0);
+    if (z == 0) return 1; // match
+    return 0;
+}
+int is_yyyy_mm_dd(char *s) {
+    int z = regexec(&reg_yyyy_mm_dd, s, 0, NULL, 0);
+    if (z == 0) return 1; // match
+    return 0;
 }
 
 void init_exptbl(exptbl_t *et, arena_t *a, short cap) {

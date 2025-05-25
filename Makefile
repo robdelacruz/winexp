@@ -5,7 +5,7 @@ EXE=t
 OBJECTS=t.o clib.o
 
 INCS=
-LIBS=
+LIBS=-lregex
 CFLAGS=-std=gnu99 -Wall -Werror
 CFLAGS+= -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable $(INCS)
 LDFLAGS=$(LIBS)
