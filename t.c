@@ -27,9 +27,15 @@ typedef struct {
     strtbl_t cats;
 } exptbl_t;
 
+typedef struct {
+    short year;
+    short month;
+    short day;
+} shortdate_t;
+
 int file_exists(const char *file);
-void load_expense_file(const char *srcfile);
-static exp_t read_expense(char *buf, exptbl_t *xps);
+void load_expense_file(const char *srcfile, exptbl_t *exps);
+static exp_t read_expense(char *buf, exptbl_t *exps);
 
 static void chomp(char *buf);
 static char *skip_ws(char *startp);
@@ -45,11 +51,22 @@ int is_yyyy(char *s);
 int is_yyyy_mm(char *s);
 int is_yyyy_mm_dd(char *s);
 
+int match_date(char *sz, shortdate_t *sd, arena_t scratch);
+
 arena_t main_arena;
 arena_t scratch_arena;
 exptbl_t exps;
 
 regex_t reg_yyyy, reg_yyyy_mm, reg_yyyy_mm_dd;
+
+/*
+exp list [cat]
+exp list [cat] date
+exp list [cat] date date
+
+date = yyyy or yyyy-mm or yyyy-mm-dd
+
+*/
 
 int main(int argc, char *argv[]) {
     char *expenses_text_file=NULL;
@@ -61,9 +78,9 @@ int main(int argc, char *argv[]) {
 
     z = regcomp(&reg_yyyy, "^[0-9]{4}$", 0);
     assert(z == 0);
-    z = regcomp(&reg_yyyy_mm, "^[0-9]{4}-[0-9]{2}$", 0);
+    z = regcomp(&reg_yyyy_mm, "^([0-9]{4})-([0-9]{2})$", 0);
     assert(z == 0);
-    z = regcomp(&reg_yyyy_mm_dd, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", 0);
+    z = regcomp(&reg_yyyy_mm_dd, "^([0-9]{4})-([0-9]{2})-([0-9]{2})$", 0);
     assert(z == 0);
 
     if (argc < 2) {
@@ -80,7 +97,7 @@ int main(int argc, char *argv[]) {
 
     init_arena(&scratch_arena, SIZE_MEDIUM);
     init_arena(&main_arena, SIZE_LARGE);
-    load_expense_file(expenses_text_file);
+    load_expense_file(expenses_text_file, &exps);
 
     time_t today = date_today();
     short y, m, d;
@@ -104,6 +121,10 @@ int main(int argc, char *argv[]) {
             printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
         }
     }
+
+    regfree(&reg_yyyy);
+    regfree(&reg_yyyy_mm);
+    regfree(&reg_yyyy_mm_dd);
 }
 
 void print_tables() {
@@ -132,6 +153,41 @@ int file_exists(const char *file) {
         return 1;
     else
         return 0;
+}
+
+int match_date(char *sz, shortdate_t *sd, arena_t scratch) {
+    int z;
+    regmatch_t match[3];
+    str_t scopy = new_str(&scratch, sz);
+
+    sd->year = 0;
+    sd->month = 0;
+    sd->day = 0;
+
+    z = regexec(&reg_yyyy, sz, 0, NULL, 0);
+    if (z == 0) {
+        sd->year = atoi(sz);
+        return 1;
+    }
+    z = regexec(&reg_yyyy_mm, sz, 2, match, 0);
+    if (z == 0) {
+        scopy.bytes[match[0].rm_eo] = 0;
+        sd->year = atoi(scopy.bytes + match[0].rm_so);
+        scopy.bytes[match[1].rm_eo] = 0;
+        sd->month = atoi(scopy.bytes + match[1].rm_so);
+        return 1;
+    }
+    z = regexec(&reg_yyyy_mm_dd, sz, 3, match, 0);
+    if (z == 0) {
+        scopy.bytes[match[0].rm_eo] = 0;
+        sd->year = atoi(scopy.bytes + match[0].rm_so);
+        scopy.bytes[match[1].rm_eo] = 0;
+        sd->month = atoi(scopy.bytes + match[1].rm_so);
+        scopy.bytes[match[2].rm_eo] = 0;
+        sd->month = atoi(scopy.bytes + match[2].rm_so);
+        return 1;
+    }
+    return 0;
 }
 
 int is_cat(char *s) {
@@ -201,7 +257,7 @@ exp_t *get_exp(exptbl_t *et, short idx) {
 }
 
 #define BUFLINE_SIZE 1000
-void load_expense_file(const char *srcfile) {
+void load_expense_file(const char *srcfile, exptbl_t *exps) {
     FILE *f;
     char buf[BUFLINE_SIZE];
 
@@ -212,7 +268,7 @@ void load_expense_file(const char *srcfile) {
     }
 
     reset_arena(&main_arena);
-    init_exptbl(&exps, &main_arena, 1000);
+    init_exptbl(exps, &main_arena, 1000);
 
     while (1) {
         errno = 0;
@@ -224,19 +280,19 @@ void load_expense_file(const char *srcfile) {
         if (strlen(buf) == 0)
             continue;
 
-        exp_t exp = read_expense(buf, &exps);
-        add_exp(&exps, exp);
+        exp_t exp = read_expense(buf, exps);
+        add_exp(exps, exp);
     }
 
     fclose(f);
 }
 
 
-static exp_t read_expense(char *buf, exptbl_t *xps) {
+static exp_t read_expense(char *buf, exptbl_t *exps) {
     exp_t retexp;
-    arena_t *arena = xps->arena;
-    strtbl_t *strings = &xps->strings;
-    strtbl_t *cats = &xps->cats;
+    arena_t *arena = exps->arena;
+    strtbl_t *strings = &exps->strings;
+    strtbl_t *cats = &exps->cats;
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee
