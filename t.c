@@ -5,6 +5,7 @@
 #include <time.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <regex.h>
@@ -76,13 +77,31 @@ int main(int argc, char *argv[]) {
     int iarg;
     int z;
 
-    z = regcomp(&reg_yyyy, "^[0-9]{4}$", 0);
+    z = regcomp(&reg_yyyy, "^[0-9]{4}$", REG_EXTENDED);
     assert(z == 0);
-    z = regcomp(&reg_yyyy_mm, "^([0-9]{4})-([0-9]{2})$", 0);
+    z = regcomp(&reg_yyyy_mm, "^([0-9]{4})-([0-9]{2})$", REG_EXTENDED);
     assert(z == 0);
-    z = regcomp(&reg_yyyy_mm_dd, "^([0-9]{4})-([0-9]{2})-([0-9]{2})$", 0);
+    z = regcomp(&reg_yyyy_mm_dd, "^([0-9]{4})-([0-9]{2})-([0-9]{2})$", REG_EXTENDED);
     assert(z == 0);
 
+    if (argc < 2) {
+        printf("Enter a date (yyyy) (yyyy-mm) or (yyyy-mm-dd)\n");
+        exit(0);
+    }
+
+    init_arena(&scratch_arena, SIZE_MEDIUM);
+    init_arena(&main_arena, SIZE_LARGE);
+
+    shortdate_t sd;
+    printf("match_date('%s')\n", argv[1]);
+    z = match_date(argv[1], &sd, scratch_arena);
+    if (z == 0) {
+        printf("No match\n");
+    } else {
+        printf("Match: year=%d month=%d day=%d\n", sd.year, sd.month, sd.day);
+    }
+
+/*
     if (argc < 2) {
         printf("Usage: %s <expenses_text_file>\n\n", argv[0]);
         exit(0);
@@ -121,6 +140,7 @@ int main(int argc, char *argv[]) {
             printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
         }
     }
+*/
 
     regfree(&reg_yyyy);
     regfree(&reg_yyyy_mm);
@@ -157,7 +177,7 @@ int file_exists(const char *file) {
 
 int match_date(char *sz, shortdate_t *sd, arena_t scratch) {
     int z;
-    regmatch_t match[3];
+    regmatch_t match[4];
     str_t scopy = new_str(&scratch, sz);
 
     sd->year = 0;
@@ -169,22 +189,34 @@ int match_date(char *sz, shortdate_t *sd, arena_t scratch) {
         sd->year = atoi(sz);
         return 1;
     }
-    z = regexec(&reg_yyyy_mm, sz, 2, match, 0);
+    z = regexec(&reg_yyyy_mm, sz, 3, match, 0);
     if (z == 0) {
-        scopy.bytes[match[0].rm_eo] = 0;
-        sd->year = atoi(scopy.bytes + match[0].rm_so);
+        assert(match[1].rm_so >= 0);
+        assert(match[1].rm_eo >= 0);
+        assert(match[2].rm_so >= 0);
+        assert(match[2].rm_eo >= 0);
+
         scopy.bytes[match[1].rm_eo] = 0;
-        sd->month = atoi(scopy.bytes + match[1].rm_so);
-        return 1;
-    }
-    z = regexec(&reg_yyyy_mm_dd, sz, 3, match, 0);
-    if (z == 0) {
-        scopy.bytes[match[0].rm_eo] = 0;
-        sd->year = atoi(scopy.bytes + match[0].rm_so);
-        scopy.bytes[match[1].rm_eo] = 0;
-        sd->month = atoi(scopy.bytes + match[1].rm_so);
+        sd->year = atoi(scopy.bytes + match[1].rm_so);
         scopy.bytes[match[2].rm_eo] = 0;
         sd->month = atoi(scopy.bytes + match[2].rm_so);
+        return 1;
+    }
+    z = regexec(&reg_yyyy_mm_dd, sz, 4, match, 0);
+    if (z == 0) {
+        assert(match[1].rm_so >= 0);
+        assert(match[1].rm_eo >= 0);
+        assert(match[2].rm_so >= 0);
+        assert(match[2].rm_eo >= 0);
+        assert(match[3].rm_so >= 0);
+        assert(match[3].rm_eo >= 0);
+
+        scopy.bytes[match[1].rm_eo] = 0;
+        sd->year = atoi(scopy.bytes + match[1].rm_so);
+        scopy.bytes[match[2].rm_eo] = 0;
+        sd->month = atoi(scopy.bytes + match[2].rm_so);
+        scopy.bytes[match[3].rm_eo] = 0;
+        sd->day = atoi(scopy.bytes + match[3].rm_so);
         return 1;
     }
     return 0;

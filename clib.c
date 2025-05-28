@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -5,6 +9,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <time.h>
 #include "clib.h"
 
