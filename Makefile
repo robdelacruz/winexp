@@ -8,7 +8,8 @@ INCS=
 LIBS=-lregex
 LIBS=
 CFLAGS=-std=gnu99 -Wall -Werror
-CFLAGS+= -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable $(INCS)
+CFLAGS+= -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+CFLAGS+= $(INCS)
 LDFLAGS=$(LIBS)
 
 ifeq ($(OS), Windows_NT)

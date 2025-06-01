@@ -47,18 +47,11 @@ short add_exp(exptbl_t *et, exp_t exp);
 void replace_exp(exptbl_t *et, short idx, exp_t exp);
 exp_t *get_exp(exptbl_t *et, short idx);
 
-int is_cat(char *s);
-int is_yyyy(char *s);
-int is_yyyy_mm(char *s);
-int is_yyyy_mm_dd(char *s);
-
-int match_date(char *sz, shortdate_t *sd, arena_t scratch);
+int match_date(char *sz, shortdate_t *sd);
 
 arena_t main_arena;
 arena_t scratch_arena;
 exptbl_t exps;
-
-regex_t reg_yyyy, reg_yyyy_mm, reg_yyyy_mm_dd;
 
 /*
 exp list [cat]
@@ -71,35 +64,65 @@ date = yyyy or yyyy-mm or yyyy-mm-dd
 
 int main(int argc, char *argv[]) {
     char *expenses_text_file=NULL;
-    char *argcat=NULL;
-    char *startdate=NULL, *enddate=NULL;
-    char *yyyy=NULL, *yyyy_mm=NULL, *yyyy_mm_dd=NULL;
-    int iarg;
+    shortdate_t dt1={0,0,0};
+    shortdate_t dt2={0,0,0};
+    shortdate_t tmpdate;
+    str_t scat = STR("");
     int z;
-
-    z = regcomp(&reg_yyyy, "^[0-9]{4}$", REG_EXTENDED);
-    assert(z == 0);
-    z = regcomp(&reg_yyyy_mm, "^([0-9]{4})-([0-9]{2})$", REG_EXTENDED);
-    assert(z == 0);
-    z = regcomp(&reg_yyyy_mm_dd, "^([0-9]{4})-([0-9]{2})-([0-9]{2})$", REG_EXTENDED);
-    assert(z == 0);
-
-    if (argc < 2) {
-        printf("Enter a date (yyyy) (yyyy-mm) or (yyyy-mm-dd)\n");
-        exit(0);
-    }
 
     init_arena(&scratch_arena, SIZE_MEDIUM);
     init_arena(&main_arena, SIZE_LARGE);
 
-    shortdate_t sd;
-    printf("match_date('%s')\n", argv[1]);
-    z = match_date(argv[1], &sd, scratch_arena);
-    if (z == 0) {
-        printf("No match\n");
-    } else {
-        printf("Match: year=%d month=%d day=%d\n", sd.year, sd.month, sd.day);
+    enum READSTATE {
+        NONE,
+        CAT_READ,
+        DATE1_READ,
+        DATE2_READ
+    } readstate = NONE;
+
+    for (int i=1; i < argc; i++) {
+        char *arg = argv[i];
+
+        if (readstate == NONE) {
+            if (match_date(arg, &tmpdate)) {
+                dt1 = tmpdate;
+                readstate = DATE1_READ;
+            } else {
+                scat = new_str(&main_arena, arg);
+                readstate = CAT_READ;
+            }
+            continue;
+        }
+        if (readstate == CAT_READ) {
+            if (match_date(arg, &tmpdate)) {
+                dt1 = tmpdate;
+                readstate = DATE1_READ;
+            }
+            continue;
+        }
+        if (readstate == DATE1_READ) {
+            if (match_date(arg, &tmpdate)) {
+                dt2 = tmpdate;
+                readstate = DATE2_READ;
+            }
+            continue;
+        }
     }
+
+    shortdate_t today;
+    date_to_cal(date_today(), &today.year, &today.month, &today.day);
+
+    time_t startdt, enddt;
+    if (dt1.year == 0) {
+        startdt = date_from_cal(today.year, 1, 1);
+    } else if (dt1.month == 0) {
+        startdt = date_from_cal(dt1.year, 1, 1);
+    } else if (dt1.day == 0) {
+        startdt = date_from_cal(dt1.year, dt1.month, 1);
+    } else {
+        startdt = date_from_cal(dt1.year, dt1.month, dt1.day);
+    }
+
 
 /*
     if (argc < 2) {
@@ -142,9 +165,6 @@ int main(int argc, char *argv[]) {
     }
 */
 
-    regfree(&reg_yyyy);
-    regfree(&reg_yyyy_mm);
-    regfree(&reg_yyyy_mm_dd);
 }
 
 void print_tables() {
@@ -175,72 +195,53 @@ int file_exists(const char *file) {
         return 0;
 }
 
-int match_date(char *sz, shortdate_t *sd, arena_t scratch) {
+int match_date(char *sz, shortdate_t *sd) {
     int z;
-    regmatch_t match[4];
-    str_t scopy = new_str(&scratch, sz);
+    regex_t regdate;
+    regmatch_t match[6];
 
     sd->year = 0;
     sd->month = 0;
     sd->day = 0;
 
-    z = regexec(&reg_yyyy, sz, 0, NULL, 0);
-    if (z == 0) {
-        sd->year = atoi(sz);
-        return 1;
-    }
-    z = regexec(&reg_yyyy_mm, sz, 3, match, 0);
-    if (z == 0) {
-        assert(match[1].rm_so >= 0);
-        assert(match[1].rm_eo >= 0);
-        assert(match[2].rm_so >= 0);
-        assert(match[2].rm_eo >= 0);
+//  match[0]: yyyy-mm-dd
+//  * match[1]: yyyy
+//  match[2]: -mm-dd
+//  * match[3]: mm
+//  match[4]: -dd
+//  * match[5]: dd
+//
+//  Without optional groups:
+//    ^([0-9]{4})-([0-9]{2})-([0-9]{2})$
+//
+//  POSIX regex (regex.h) doesn't support \d or (?:) non-capturing groups, so we have 
+//  to use [0-9] and ()? for optional groups.
 
-        scopy.bytes[match[1].rm_eo] = 0;
-        sd->year = atoi(scopy.bytes + match[1].rm_so);
-        scopy.bytes[match[2].rm_eo] = 0;
-        sd->month = atoi(scopy.bytes + match[2].rm_so);
-        return 1;
-    }
-    z = regexec(&reg_yyyy_mm_dd, sz, 4, match, 0);
-    if (z == 0) {
-        assert(match[1].rm_so >= 0);
-        assert(match[1].rm_eo >= 0);
-        assert(match[2].rm_so >= 0);
-        assert(match[2].rm_eo >= 0);
-        assert(match[3].rm_so >= 0);
-        assert(match[3].rm_eo >= 0);
+    z = regcomp(&regdate, "^([0-9]{4})(-([0-9]{2})(-([0-9]{2}))?)?$", REG_EXTENDED);
+    assert(z == 0);
 
-        scopy.bytes[match[1].rm_eo] = 0;
-        sd->year = atoi(scopy.bytes + match[1].rm_so);
-        scopy.bytes[match[2].rm_eo] = 0;
-        sd->month = atoi(scopy.bytes + match[2].rm_so);
-        scopy.bytes[match[3].rm_eo] = 0;
-        sd->day = atoi(scopy.bytes + match[3].rm_so);
-        return 1;
-    }
-    return 0;
-}
-
-int is_cat(char *s) {
-    if (is_yyyy(s) || is_yyyy_mm(s) || is_yyyy_mm_dd(s))
+    z = regexec(&regdate, sz, 6, match, 0);
+    regfree(&regdate);
+    if (z != 0)
         return 0;
+
+    if (match[1].rm_so != -1) {
+        assert(match[1].rm_eo >= 0);
+        sz[match[1].rm_eo] = 0;
+        sd->year = atoi(sz + match[1].rm_so);
+    }
+    if (match[3].rm_so != -1) {
+        assert(match[3].rm_eo >= 0);
+        sz[match[3].rm_eo] = 0;
+        sd->month = atoi(sz + match[3].rm_so);
+    }
+    if (match[5].rm_so != -1) {
+        assert(match[5].rm_eo >= 0);
+        sz[match[5].rm_eo] = 0;
+        sd->day = atoi(sz + match[5].rm_so);
+    }
+
     return 1;
-}
-int is_yyyy(char *s) {
-    int z = regexec(&reg_yyyy, s, 0, NULL, 0);
-    if (z == 0) return 1; // match
-    return 0;
-}
-int is_yyyy_mm(char *s) {
-    int z = regexec(&reg_yyyy_mm, s, 0, NULL, 0);
-    if (z == 0) return 1; // match
-    return 0;
-}
-int is_yyyy_mm_dd(char *s) {
-    int z = regexec(&reg_yyyy_mm_dd, s, 0, NULL, 0);
-    if (z == 0) return 1; // match
-    return 0;
 }
 
 void init_exptbl(exptbl_t *et, arena_t *a, short cap) {
