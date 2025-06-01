@@ -112,59 +112,71 @@ int main(int argc, char *argv[]) {
     shortdate_t today;
     date_to_cal(date_today(), &today.year, &today.month, &today.day);
 
-    time_t startdt, enddt;
+    time_t startdt=0, enddt=0;
     if (dt1.year == 0) {
-        startdt = date_from_cal(today.year, 1, 1);
+        // No dates specified, default to current month.
+        startdt = date_from_cal(today.year, today.month, 1);
+        if (dt2.year == 0)
+            enddt = date_next_month(startdt);
     } else if (dt1.month == 0) {
+        // Year specified yyyy
         startdt = date_from_cal(dt1.year, 1, 1);
+        if (dt2.year == 0)
+            enddt = date_from_cal(dt1.year+1, 1, 1);
     } else if (dt1.day == 0) {
+        // Month specified yyyy-mm
         startdt = date_from_cal(dt1.year, dt1.month, 1);
+        if (dt2.year == 0)
+            enddt = date_next_month(startdt);
     } else {
+        // Full date specified yyyy-mm-dd
         startdt = date_from_cal(dt1.year, dt1.month, dt1.day);
+        if (dt2.year == 0)
+            enddt = date_next_day(startdt);
     }
 
-
-/*
-    if (argc < 2) {
-        printf("Usage: %s <expenses_text_file>\n\n", argv[0]);
-        exit(0);
+    if (dt2.year == 0) {
+    } else if (dt2.month == 0) {
+        // Year specified yyyy
+        enddt = date_from_cal(dt2.year+1, 1, 1);
+    } else if (dt2.day == 0) {
+        // Month specified yyyy-mm
+        enddt = date_next_month(date_from_cal(dt2.year, dt2.month, 1));
+    } else {
+        // Full date specified yyyy-mm-dd
+        enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
     }
 
-    iarg = 1;
-    expenses_text_file = argv[iarg];
-    if (!file_exists(expenses_text_file)) {
-        fprintf(stderr, "Expense file '%s' not found.\n", expenses_text_file);
-        exit(1);
+    char iso_startdt[ISO_DATE_LEN+1], iso_enddt[ISO_DATE_LEN+1];
+    date_to_iso(startdt, iso_startdt, sizeof(iso_startdt));
+    date_to_iso(date_prev_day(enddt), iso_enddt, sizeof(iso_enddt));
+
+    if (scat.len > 0) {
+        printf("List Expenses for category '%s' from ", scat.bytes);
+    } else {
+        printf("List Expenses from ");
     }
+    printf("%s to %s:\n\n", iso_startdt, iso_enddt);
 
-    init_arena(&scratch_arena, SIZE_MEDIUM);
-    init_arena(&main_arena, SIZE_LARGE);
-    load_expense_file(expenses_text_file, &exps);
-
-    time_t today = date_today();
-    short y, m, d;
-    date_to_cal(today, &y, &m, &d);
-    time_t start_month = date_from_cal(y, m, 1);
-    time_t next_month = date_next_month(start_month);
-
-    char sdate[ISO_DATE_LEN+1];
-    date_to_iso(start_month, sdate, sizeof(sdate));
-    printf("Date range: %s - ", sdate);
-    date_to_iso(next_month, sdate, sizeof(sdate));
-    printf("%s\n\n", sdate);
+    exptbl_t exps;
+    init_exptbl(&exps, &main_arena, 100);
+    load_expense_file("expenses", &exps);
 
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
-        if (xp.date >= start_month && xp.date < next_month) {
-            str_t desc = strtbl_get(&exps.strings, xp.descid);
-            str_t catname = strtbl_get(&exps.cats, xp.catid);
-            date_to_iso(xp.date, sdate, sizeof(sdate));
 
-            printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
-        }
+        if (xp.date < startdt || xp.date >= enddt)
+            continue;
+
+        str_t catname = strtbl_get(&exps.cats, xp.catid);
+        if (scat.len > 0 && strcmp(catname.bytes, scat.bytes) != 0)
+            continue;
+
+        char sdate[ISO_DATE_LEN+1];
+        date_to_iso(xp.date, sdate, sizeof(sdate));
+        str_t desc = strtbl_get(&exps.strings, xp.descid);
+        printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
     }
-*/
-
 }
 
 void print_tables() {
@@ -299,9 +311,6 @@ void load_expense_file(const char *srcfile, exptbl_t *exps) {
         fprintf(stderr, "Error opening '%s'.\n", srcfile);
         return;
     }
-
-    reset_arena(&main_arena);
-    init_exptbl(exps, &main_arena, 1000);
 
     while (1) {
         errno = 0;
