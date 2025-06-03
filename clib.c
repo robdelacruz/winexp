@@ -72,6 +72,9 @@ str_t dup_str(arena_t *a, str_t src) {
     retstr.bytes[retstr.len] = 0;
     return retstr;
 }
+int str_equals(str_t s, char *sz) {
+    return !strcmp(s.bytes, sz);
+}
 
 void init_strtbl(strtbl_t *st, arena_t *a, short cap) {
     if (cap == 0)

@@ -35,6 +35,7 @@ typedef struct {
 } shortdate_t;
 
 int file_exists(const char *file);
+str_t get_expense_filename(arena_t *a);
 void load_expense_file(const char *srcfile, exptbl_t *exps);
 static exp_t read_expense(char *buf, exptbl_t *exps);
 
@@ -49,7 +50,7 @@ exp_t *get_exp(exptbl_t *et, short idx);
 
 int match_date(char *sz, shortdate_t *sd);
 
-arena_t main_arena;
+arena_t exp_arena;
 arena_t scratch_arena;
 exptbl_t exps;
 
@@ -62,51 +63,73 @@ date = yyyy or yyyy-mm or yyyy-mm-dd
 
 */
 
+enum EXPCMD {
+    LIST,
+    CAT,
+    YTD,
+    INFO
+};
+
 int main(int argc, char *argv[]) {
     char *expenses_text_file=NULL;
     shortdate_t dt1={0,0,0};
     shortdate_t dt2={0,0,0};
     shortdate_t tmpdate;
+    str_t scmd = STR("");
     str_t scat = STR("");
     int z;
 
     init_arena(&scratch_arena, SIZE_MEDIUM);
-    init_arena(&main_arena, SIZE_LARGE);
+    init_arena(&exp_arena, SIZE_LARGE);
 
-    enum READSTATE {
-        NONE,
-        CAT_READ,
-        DATE1_READ,
-        DATE2_READ
-    } readstate = NONE;
+    enum ARGSTEP {
+        READ_NONE,
+        READ_CMD,
+        READ_CAT,
+        READ_DATE1,
+        READ_DATE2
+    } argstep = READ_NONE;
 
     for (int i=1; i < argc; i++) {
         char *arg = argv[i];
 
-        if (readstate == NONE) {
+        if (argstep == READ_NONE) {
+            scmd = new_str(&scratch_arena, arg);
+            argstep = READ_CMD;
+            continue;
+        } else if (argstep == READ_CMD) {
             if (match_date(arg, &tmpdate)) {
                 dt1 = tmpdate;
-                readstate = DATE1_READ;
+                argstep = READ_DATE1;
             } else {
-                scat = new_str(&main_arena, arg);
-                readstate = CAT_READ;
+                scat = new_str(&scratch_arena, arg);
+                argstep = READ_CAT;
             }
             continue;
         }
-        if (readstate == CAT_READ) {
+        if (argstep == READ_CAT) {
             if (match_date(arg, &tmpdate)) {
                 dt1 = tmpdate;
-                readstate = DATE1_READ;
+                argstep = READ_DATE1;
             }
             continue;
         }
-        if (readstate == DATE1_READ) {
+        if (argstep == READ_DATE1) {
             if (match_date(arg, &tmpdate)) {
                 dt2 = tmpdate;
-                readstate = DATE2_READ;
+                argstep = READ_DATE2;
             }
             continue;
         }
+    }
+
+    if (scmd.len == 0) {
+        printf("Enter a command (list, cat, ytd, info)\n");
+        exit(0);
+    }
+    if (!str_equals(scmd, "list") && !str_equals(scmd, "cat") && !str_equals(scmd, "ytd") && !str_equals(scmd, "info")) {
+        printf("Invalid command. (Valid: list, cat, ytd, info)\n");
+        exit(0);
     }
 
     shortdate_t today;
@@ -158,9 +181,11 @@ int main(int argc, char *argv[]) {
     }
     printf("%s to %s:\n\n", iso_startdt, iso_enddt);
 
+    str_t strexpfile = get_expense_filename(&scratch_arena);
+    printf("file: '%s'\n", strexpfile.bytes);
+
     exptbl_t exps;
-    init_exptbl(&exps, &main_arena, 100);
-    load_expense_file("expenses", &exps);
+    load_expense_file(strexpfile.bytes, &exps);
 
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
@@ -301,14 +326,52 @@ exp_t *get_exp(exptbl_t *et, short idx) {
     return &et->base[idx];
 }
 
+str_t get_expense_filename(arena_t *a) {
+    char buf[2048];
+    static char expenses_filename[] = "expenses";
+    char *path;
+
+    path = getenv("WINEXPFILE");
+    if (path != NULL && strlen(path) > 0)
+        return new_str(a, path);
+
+    // $WINEXPFILE not set, so read expense filename from home directory
+
+#ifdef _WIN32
+    path = getenv("USERPROFILE");
+    if (path != NULL && strlen(path) > 0) {
+        snprintf(buf, sizeof(buf), "%s\\%s", path, expenses_filename);
+        return new_str(a, buf);
+    }
+    char *homedrive = getenv("HOMEDRIVE");
+    char *homepath = getenv("HOMEPATH");
+    if (homedrive != NULL && homepath != NULL) {
+        snprintf(buf, sizeof(buf), "%s%s\\%s", homedrive, homepath, expenses_filename);
+        return new_str(a, buf);
+    }
+    // Can't determine home directory on Windows, so just use current directory.
+    return new_str(a, expenses_filename);
+#else
+    path = getenv("HOME");
+    if (path == NULL || strlen(path) == 0)
+        path = "~"
+    snprintf(buf, sizeof(buf), "%s/%s", path, expenses_filename);
+    return new_str(a, buf);
+#endif
+}
+
 #define BUFLINE_SIZE 1000
 void load_expense_file(const char *srcfile, exptbl_t *exps) {
     FILE *f;
     char buf[BUFLINE_SIZE];
 
+    reset_arena(&exp_arena);
+    init_exptbl(exps, &exp_arena, 100);
+
     f = fopen(srcfile, "r");
     if (f == NULL) {
-        fprintf(stderr, "Error opening '%s'.\n", srcfile);
+        fprintf(stderr, "Error opening '%s': ", srcfile);
+        print_error(NULL);
         return;
     }
 

@@ -65,6 +65,7 @@ typedef struct {
 
 str_t new_str(arena_t *a, char *sz);
 str_t dup_str(arena_t *a, str_t src);
+int str_equals(str_t s, char *sz);
 
 typedef struct {
     arena_t *arena;
