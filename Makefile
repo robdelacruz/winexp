@@ -1,8 +1,8 @@
 CC=gcc
 WINDRES=windres
 
-EXE=t
-OBJECTS=t.o clib.o
+EXE=texp
+OBJECTS=texp.o clib.o
 
 INCS=
 LIBS=
@@ -11,7 +11,7 @@ CFLAGS+= -Wno-deprecated-declarations -Wno-unused-function -Wno-unused-variable 
 CFLAGS+= $(INCS)
 
 ifeq ($(OS), Windows_NT)
-	EXE=t.exe
+	EXE=texp.exe
 	OBJECTS+= strptime.o
 	CFLAGS+= -DWINDOWS
 	LIBS+= -lregex

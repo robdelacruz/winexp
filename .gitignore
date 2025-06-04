@@ -1,6 +1,6 @@
 *.swp
 *.o
-t.exe
-t
+texp.exe
+texp
 expenses
 

@@ -50,6 +50,8 @@ exp_t *get_exp(exptbl_t *et, short idx);
 
 int match_date(char *sz, shortdate_t *sd);
 
+void list_expenses(str_t scat, time_t startdt, time_t enddt);
+
 arena_t exp_arena;
 arena_t scratch_arena;
 exptbl_t exps;
@@ -123,15 +125,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (scmd.len == 0) {
-        printf("Enter a command (list, cat, ytd, info)\n");
-        exit(0);
-    }
-    if (!str_equals(scmd, "list") && !str_equals(scmd, "cat") && !str_equals(scmd, "ytd") && !str_equals(scmd, "info")) {
-        printf("Invalid command. (Valid: list, cat, ytd, info)\n");
-        exit(0);
-    }
-
     shortdate_t today;
     date_to_cal(date_today(), &today.year, &today.month, &today.day);
 
@@ -170,22 +163,68 @@ int main(int argc, char *argv[]) {
         enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
     }
 
-    char iso_startdt[ISO_DATE_LEN+1], iso_enddt[ISO_DATE_LEN+1];
-    date_to_iso(startdt, iso_startdt, sizeof(iso_startdt));
-    date_to_iso(date_prev_day(enddt), iso_enddt, sizeof(iso_enddt));
+    if (str_equals(scmd, "list")) {
+        list_expenses(scat, startdt, enddt);
+        return 0;
+    }
+
+    printf(
+R"(exp - Utility for keeping track and reporting of daily expenses.
+
+Usage:
+
+    exp <command> [arguments]
+
+Commands:
+
+    add     add an expense
+    edit    edit an expense
+    del     delete an expense
+    list    display list of expenses
+    cat     display category subtotals
+    ytd     display year to date subtotals
+    info    display expense file location and other info
+
+Use "exp help [command]" to display information about a command.
+
+Examples:
+    exp add DESC AMT CAT [DATE]
+    exp edit RECNO
+    exp del RECNO
+    exp list [CAT] [START_DATE] [END_DATE]
+    exp cat [START_DATE] [END_DATE]
+    exp ytd [YEAR]
+
+    exp help
+    exp help add
+    exp help edit
+
+)");
+}
+
+void list_expenses(str_t scat, time_t startdt, time_t enddt) {
+    char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
+    date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
+    date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
 
     if (scat.len > 0) {
-        printf("List Expenses for category '%s' from ", scat.bytes);
+        printf("Showing expenses: %s - %s   category [%s]\n\n", startdt_iso, enddt_iso, scat.bytes);
     } else {
-        printf("List Expenses from ");
+        printf("Showing expenses: %s - %s\n\n", startdt_iso, enddt_iso);
     }
-    printf("%s to %s:\n\n", iso_startdt, iso_enddt);
 
-    str_t strexpfile = get_expense_filename(&scratch_arena);
-    printf("file: '%s'\n", strexpfile.bytes);
+    str_t expfile = get_expense_filename(&scratch_arena);
+    if (!file_exists(expfile.bytes)) {
+        FILE *f = fopen(expfile.bytes, "a");
+        if (f == NULL) {
+            print_error("Error creating expense file");
+            exit(1);
+        }
+        fclose(f);
+    }
 
     exptbl_t exps;
-    load_expense_file(strexpfile.bytes, &exps);
+    load_expense_file(expfile.bytes, &exps);
 
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
@@ -354,7 +393,7 @@ str_t get_expense_filename(arena_t *a) {
 #else
     path = getenv("HOME");
     if (path == NULL || strlen(path) == 0)
-        path = "~"
+        path = "~";
     snprintf(buf, sizeof(buf), "%s/%s", path, expenses_filename);
     return new_str(a, buf);
 #endif
