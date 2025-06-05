@@ -12,6 +12,12 @@
 #include "clib.h"
 
 typedef struct {
+    short year;
+    short month;
+    short day;
+} shortdate_t;
+
+typedef struct {
     time_t date;
     short descid;
     float amt;
@@ -28,28 +34,26 @@ typedef struct {
     strtbl_t cats;
 } exptbl_t;
 
-typedef struct {
-    short year;
-    short month;
-    short day;
-} shortdate_t;
-
-int file_exists(const char *file);
-str_t get_expense_filename(arena_t *a);
-void load_expense_file(const char *srcfile, exptbl_t *exps);
-static exp_t read_expense(char *buf, exptbl_t *exps);
-
-static void chomp(char *buf);
-static char *skip_ws(char *startp);
-static char *next_field(char *startp);
 
 void init_exptbl(exptbl_t *et, arena_t *a, short cap);
 short add_exp(exptbl_t *et, exp_t exp);
 void replace_exp(exptbl_t *et, short idx, exp_t exp);
 exp_t *get_exp(exptbl_t *et, short idx);
 
-int match_date(char *sz, shortdate_t *sd);
+static int cmp_exp_date(void *a, void *b);
+typedef int (*comparefunc_t)(void *a, void *b);
+void sort_exptbl(exptbl_t *et, comparefunc_t cmpfunc);
 
+int file_exists(const char *file);
+str_t get_expense_filename(arena_t *a);
+void load_expense_file(const char *srcfile, exptbl_t *exps);
+
+static exp_t read_expense(char *buf, exptbl_t *exps);
+static void chomp(char *buf);
+static char *skip_ws(char *startp);
+static char *next_field(char *startp);
+
+int match_date(char *sz, shortdate_t *sd);
 void list_expenses(str_t scat, time_t startdt, time_t enddt);
 
 arena_t exp_arena;
@@ -219,7 +223,13 @@ int main(int argc, char *argv[]) {
         enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
     }
 
-    if (str_equals(scmd, "help")) {
+    if (str_equals(scmd, "info")) {
+        str_t expfile = get_expense_filename(&scratch_arena);
+        printf("exp config info\n\n");
+        printf("    expense file  : %s\n\n", expfile.bytes);
+        printf("Set the WINEXPFILE environment var to change the active expense file.\n");
+        printf("Expense file will be created automatically when you add or display expenses.\n\n");
+    } else if (str_equals(scmd, "help")) {
         if (str_equals(sarg, "list"))
             printf(HELP_LIST);
         else
@@ -255,12 +265,15 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt) {
 
     exptbl_t exps;
     load_expense_file(expfile.bytes, &exps);
+    sort_exptbl(&exps, cmp_exp_date);
 
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
 
-        if (xp.date < startdt || xp.date >= enddt)
+        if (xp.date < startdt)
             continue;
+        if (xp.date >= enddt)
+            break;
 
         str_t catname = strtbl_get(&exps.cats, xp.catid);
         if (scat.len > 0 && strcmp(catname.bytes, scat.bytes) != 0)
@@ -269,7 +282,7 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt) {
         char sdate[ISO_DATE_LEN+1];
         date_to_iso(xp.date, sdate, sizeof(sdate));
         str_t desc = strtbl_get(&exps.strings, xp.descid);
-        printf("%-12s %-30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i);
+        printf("%-12s %-30.30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i+1);
     }
 }
 
@@ -393,6 +406,42 @@ exp_t *get_exp(exptbl_t *et, short idx) {
     if (idx >= et->len)
         return NULL;
     return &et->base[idx];
+}
+
+static int cmp_exp_date(void *a, void *b) {
+    exp_t *expa = a;
+    exp_t *expb = b;
+    if (expa->date < expb->date) return -1;
+    if (expa->date > expb->date) return 1;
+    return 0;
+}
+static void swap_exp(exp_t *exps, int i, int j) {
+    exp_t tmp = exps[i];
+    exps[i] = exps[j];
+    exps[j] = tmp;
+}
+static int sort_exps_partition(exp_t *exps, int start, int end, comparefunc_t cmp) {
+    int imid = start;
+    exp_t pivot = exps[end];
+
+    for (int i=start; i < end; i++) {
+        if (cmp(&exps[i], &pivot) < 0) {
+            swap_exp(exps, imid, i);
+            imid++;
+        }
+    }
+    swap_exp(exps, imid, end);
+    return imid;
+}
+static void sort_exps_part(exp_t *exps, int start, int end, comparefunc_t cmp) {
+    if (start >= end)
+        return;
+    int pivot = sort_exps_partition(exps, start, end, cmp);
+    sort_exps_part(exps, start, pivot-1, cmp);
+    sort_exps_part(exps, pivot+1, end, cmp);
+}
+void sort_exptbl(exptbl_t *et, comparefunc_t cmp) {
+    sort_exps_part(et->base, 0, et->len-1, cmp);
 }
 
 str_t get_expense_filename(arena_t *a) {
