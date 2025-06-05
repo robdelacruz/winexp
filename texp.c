@@ -56,15 +56,6 @@ arena_t exp_arena;
 arena_t scratch_arena;
 exptbl_t exps;
 
-/*
-exp list [cat]
-exp list [cat] date
-exp list [cat] date date
-
-date = yyyy or yyyy-mm or yyyy-mm-dd
-
-*/
-
 enum EXPCMD {
     LIST,
     CAT,
@@ -72,22 +63,87 @@ enum EXPCMD {
     INFO
 };
 
+const char HELP_ROOT[] = 
+R"(exp - Utility for keeping track and reporting of daily expenses.
+
+Usage:
+
+    exp <command> [arguments]
+
+Commands:
+
+    add     add an expense
+    edit    edit an expense
+    del     delete an expense
+    list    display list of expenses
+    cat     display category subtotals
+    ytd     display year to date subtotals
+    info    display expense file location and other info
+
+Use "exp help [command]" to display information about a command.
+
+Examples:
+    exp add DESC AMT CAT [DATE]
+    exp edit RECNO
+    exp del RECNO
+    exp list [CAT] [STARTDATE] [ENDDATE]
+    exp cat [STARTDATE] [ENDDATE]
+    exp ytd [YEAR]
+
+    exp help
+    exp help add
+    exp help edit
+
+)";
+const char HELP_LIST[] =
+R"(exp list - Display list of expenses.
+
+Usage:
+
+    exp list [CAT] [YEAR] | [YEAR-MONTH] | [DATE] | [STARTDATE] [ENDDATE]
+
+    CAT         : category
+    YEAR        : year in YYYY format
+    YEAR-MONTH  : year and month in YYYY-MM format
+    DATE        : date in iso date format YYYY-MM-DD
+    STARTDATE   : start date in iso date format YYYY-MM-DD
+    ENDDATE     : end date in iso date format YYYY-MM-DD
+
+    Specify CAT to show expenses belonging to category.
+    Specify YEAR to show expenses occurring on that year.
+    Specify YEAR-MONTH to show expenses occurring on that month.
+    Specify DATE to show expenses occurring on that date.
+    Specify STARTDATE and/or ENDDATE to specify an inclusive date range.
+
+Example:
+
+    exp list dine_out
+    exp list dine_out 2025
+    exp list dine_out 2025-06
+    exp list dine_out 2025-06-01
+    exp list 2025-06
+    exp list 2025-06-01
+    exp list 2025-01-01 2025-12-31
+
+)";
+
+
 int main(int argc, char *argv[]) {
     char *expenses_text_file=NULL;
     shortdate_t dt1={0,0,0};
     shortdate_t dt2={0,0,0};
     shortdate_t tmpdate;
     str_t scmd = STR("");
-    str_t scat = STR("");
+    str_t sarg = STR("");
     int z;
 
-    init_arena(&scratch_arena, SIZE_MEDIUM);
     init_arena(&exp_arena, SIZE_LARGE);
+    init_arena(&scratch_arena, SIZE_MEDIUM);
 
     enum ARGSTEP {
         READ_NONE,
         READ_CMD,
-        READ_CAT,
+        READ_ARG,
         READ_DATE1,
         READ_DATE2
     } argstep = READ_NONE;
@@ -104,12 +160,12 @@ int main(int argc, char *argv[]) {
                 dt1 = tmpdate;
                 argstep = READ_DATE1;
             } else {
-                scat = new_str(&scratch_arena, arg);
-                argstep = READ_CAT;
+                sarg = new_str(&scratch_arena, arg);
+                argstep = READ_ARG;
             }
             continue;
         }
-        if (argstep == READ_CAT) {
+        if (argstep == READ_ARG) {
             if (match_date(arg, &tmpdate)) {
                 dt1 = tmpdate;
                 argstep = READ_DATE1;
@@ -163,43 +219,17 @@ int main(int argc, char *argv[]) {
         enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
     }
 
-    if (str_equals(scmd, "list")) {
-        list_expenses(scat, startdt, enddt);
-        return 0;
+    if (str_equals(scmd, "help")) {
+        if (str_equals(sarg, "list"))
+            printf(HELP_LIST);
+        else
+            printf(HELP_ROOT);
+    } else if (str_equals(scmd, "list")) {
+        list_expenses(sarg, startdt, enddt);
     }
 
-    printf(
-R"(exp - Utility for keeping track and reporting of daily expenses.
-
-Usage:
-
-    exp <command> [arguments]
-
-Commands:
-
-    add     add an expense
-    edit    edit an expense
-    del     delete an expense
-    list    display list of expenses
-    cat     display category subtotals
-    ytd     display year to date subtotals
-    info    display expense file location and other info
-
-Use "exp help [command]" to display information about a command.
-
-Examples:
-    exp add DESC AMT CAT [DATE]
-    exp edit RECNO
-    exp del RECNO
-    exp list [CAT] [START_DATE] [END_DATE]
-    exp cat [START_DATE] [END_DATE]
-    exp ytd [YEAR]
-
-    exp help
-    exp help add
-    exp help edit
-
-)");
+    free_arena(&exp_arena);
+    free_arena(&scratch_arena);
 }
 
 void list_expenses(str_t scat, time_t startdt, time_t enddt) {
