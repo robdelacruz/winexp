@@ -74,7 +74,6 @@ typedef struct {
     short len;
 } strtbl_t;
 
-strtbl_t new_strtbl(arena_t *a, short cap);
 void init_strtbl(strtbl_t *st, arena_t *a, short cap);
 short strtbl_add(strtbl_t *st, str_t s);
 void strtbl_replace(strtbl_t *st, short idx, str_t s);

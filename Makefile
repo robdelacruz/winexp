@@ -2,7 +2,7 @@ CC=gcc
 WINDRES=windres
 
 EXE=texp
-OBJECTS=texp.o clib.o
+OBJECTS=texp.o clib.o exp.o
 
 INCS=
 LIBS=
