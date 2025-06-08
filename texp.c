@@ -40,13 +40,16 @@ short add_exp(exptbl_t *et, exp_t exp);
 void replace_exp(exptbl_t *et, short idx, exp_t exp);
 exp_t *get_exp(exptbl_t *et, short idx);
 
-static int cmp_exp_date(void *a, void *b);
-typedef int (*comparefunc_t)(void *a, void *b);
-void sort_exptbl(exptbl_t *et, comparefunc_t cmpfunc);
+static int cmp_exp_date(exptbl_t *et, void *a, void *b);
+static int cmp_exp_cat(exptbl_t *et, void *a, void *b);
+typedef int (*comparefunc_t)(exptbl_t *et, void *a, void *b);
+static void sort_exptbl(exptbl_t *et, comparefunc_t cmpfunc);
+static void sort_exps_part(exptbl_t *et, int start, int end, comparefunc_t cmp);
 
 int file_exists(const char *file);
 str_t get_expense_filename(arena_t *a);
-void load_expense_file(const char *srcfile, exptbl_t *exps);
+void touch_expense_file(const char *expfile);
+void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *exps);
 
 static exp_t read_expense(char *buf, exptbl_t *exps);
 static void chomp(char *buf);
@@ -55,6 +58,7 @@ static char *next_field(char *startp);
 
 int match_date(char *sz, shortdate_t *sd);
 void list_expenses(str_t scat, time_t startdt, time_t enddt);
+void list_categories(time_t startdt, time_t enddt);
 
 arena_t exp_arena;
 arena_t scratch_arena;
@@ -236,6 +240,10 @@ int main(int argc, char *argv[]) {
             printf(HELP_ROOT);
     } else if (str_equals(scmd, "list")) {
         list_expenses(sarg, startdt, enddt);
+    } else if (str_equals(scmd, "cat")) {
+        list_categories(startdt, enddt);
+    } else {
+        printf(HELP_ROOT);
     }
 
     free_arena(&exp_arena);
@@ -247,26 +255,19 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt) {
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
     date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
 
-    if (scat.len > 0) {
-        printf("Showing expenses: %s - %s   category [%s]\n\n", startdt_iso, enddt_iso, scat.bytes);
-    } else {
-        printf("Showing expenses: %s - %s\n\n", startdt_iso, enddt_iso);
-    }
-
-    str_t expfile = get_expense_filename(&scratch_arena);
-    if (!file_exists(expfile.bytes)) {
-        FILE *f = fopen(expfile.bytes, "a");
-        if (f == NULL) {
-            print_error("Error creating expense file");
-            exit(1);
-        }
-        fclose(f);
-    }
-
     exptbl_t exps;
-    load_expense_file(expfile.bytes, &exps);
+    load_expense_file(&exp_arena, scratch_arena, &exps);
     sort_exptbl(&exps, cmp_exp_date);
 
+    printf("Display: Expenses\n");
+    printf("Date range [%s] to [%s]\n", startdt_iso, enddt_iso);
+    if (scat.len > 0)
+        printf("Filter by category [%s]\n", scat.bytes);
+    printf("\n");
+
+    // istart = index to first exp record within date range
+    // iend = index to last exp record within date range
+    int istart=-1, iend=-1;
     for (int i=0; i < exps.len; i++) {
         exp_t xp = exps.base[i];
 
@@ -274,6 +275,21 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt) {
             continue;
         if (xp.date >= enddt)
             break;
+
+        if (istart == -1)
+            istart = i;
+        iend = i;
+    }
+    assert(iend >= istart);
+    if (istart == -1 || iend == -1) {
+        printf("No expenses found.\n");
+        return;
+    }
+
+    double total = 0.0;
+    for (int i=istart; i <= iend; i++) {
+        exp_t xp = exps.base[i];
+        assert(xp.date >= startdt && xp.date < enddt);
 
         str_t catname = strtbl_get(&exps.cats, xp.catid);
         if (scat.len > 0 && strcmp(catname.bytes, scat.bytes) != 0)
@@ -283,7 +299,78 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt) {
         date_to_iso(xp.date, sdate, sizeof(sdate));
         str_t desc = strtbl_get(&exps.strings, xp.descid);
         printf("%-12s %-30.30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i+1);
+
+        total += xp.amt;
     }
+
+    printf("------------------------------------------------------------------------\n");
+    printf("%-12s %-30s %9.2f    %-10s\n", "Totals", "", total, "");
+}
+
+void list_categories(time_t startdt, time_t enddt) {
+    char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
+    date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
+    date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
+
+    exptbl_t exps;
+    load_expense_file(&exp_arena, scratch_arena, &exps);
+    sort_exptbl(&exps, cmp_exp_date);
+
+    printf("Display: Categories\n");
+    printf("Date range [%s] to [%s]\n", startdt_iso, enddt_iso);
+    printf("\n");
+
+    // istart = index to first exp record within date range
+    // iend = index to last exp record within date range
+    int istart=-1, iend=-1;
+    for (int i=0; i < exps.len; i++) {
+        exp_t xp = exps.base[i];
+
+        if (xp.date < startdt)
+            continue;
+        if (xp.date >= enddt)
+            break;
+
+        if (istart == -1)
+            istart = i;
+        iend = i;
+    }
+    assert(iend >= istart);
+    if (istart == -1 || iend == -1) {
+        printf("No expenses found.\n");
+        return;
+    }
+
+    // Sort expenses within the date range by categories
+    sort_exps_part(&exps, istart, iend, cmp_exp_cat);
+
+    double total = 0.0;
+    double catsubtotal = 0.0;
+    short cur_catid = -1;
+    for (int i=istart; i <= iend; i++) {
+        exp_t xp = exps.base[i];
+        assert(xp.date >= startdt && xp.date < enddt);
+        total += xp.amt;
+
+        if (cur_catid != -1 && xp.catid != cur_catid) {
+            str_t catname = strtbl_get(&exps.cats, cur_catid);
+            printf("%-12.12s %12.2f\n", catname.bytes, catsubtotal);
+
+            cur_catid = xp.catid;
+            catsubtotal = xp.amt;
+            continue;
+        }
+
+        cur_catid = xp.catid;
+        catsubtotal += xp.amt;
+    }
+    assert(cur_catid != -1);
+
+    str_t catname = strtbl_get(&exps.cats, cur_catid);
+    printf("%-12.12s %12.2f\n", catname.bytes, catsubtotal);
+
+    printf("------------------------------------------------------------------------\n");
+    printf("%-12.12s %12.2f\n", "Totals", total);
 }
 
 void print_tables() {
@@ -408,40 +495,48 @@ exp_t *get_exp(exptbl_t *et, short idx) {
     return &et->base[idx];
 }
 
-static int cmp_exp_date(void *a, void *b) {
+static int cmp_exp_date(exptbl_t *et, void *a, void *b) {
     exp_t *expa = a;
     exp_t *expb = b;
     if (expa->date < expb->date) return -1;
     if (expa->date > expb->date) return 1;
     return 0;
 }
+static int cmp_exp_cat(exptbl_t *et, void *a, void *b) {
+    exp_t *expa = a;
+    exp_t *expb = b;
+    str_t cata = strtbl_get(&et->cats, expa->catid);
+    str_t catb = strtbl_get(&et->cats, expb->catid);
+
+    return strcasecmp(cata.bytes, catb.bytes);
+}
 static void swap_exp(exp_t *exps, int i, int j) {
     exp_t tmp = exps[i];
     exps[i] = exps[j];
     exps[j] = tmp;
 }
-static int sort_exps_partition(exp_t *exps, int start, int end, comparefunc_t cmp) {
+static int sort_exps_partition(exptbl_t *et, int start, int end, comparefunc_t cmp) {
     int imid = start;
-    exp_t pivot = exps[end];
+    exp_t pivot = et->base[end];
 
     for (int i=start; i < end; i++) {
-        if (cmp(&exps[i], &pivot) < 0) {
-            swap_exp(exps, imid, i);
+        if (cmp(et, &et->base[i], &pivot) < 0) {
+            swap_exp(et->base, imid, i);
             imid++;
         }
     }
-    swap_exp(exps, imid, end);
+    swap_exp(et->base, imid, end);
     return imid;
 }
-static void sort_exps_part(exp_t *exps, int start, int end, comparefunc_t cmp) {
+static void sort_exps_part(exptbl_t *et, int start, int end, comparefunc_t cmp) {
     if (start >= end)
         return;
-    int pivot = sort_exps_partition(exps, start, end, cmp);
-    sort_exps_part(exps, start, pivot-1, cmp);
-    sort_exps_part(exps, pivot+1, end, cmp);
+    int pivot = sort_exps_partition(et, start, end, cmp);
+    sort_exps_part(et, start, pivot-1, cmp);
+    sort_exps_part(et, pivot+1, end, cmp);
 }
-void sort_exptbl(exptbl_t *et, comparefunc_t cmp) {
-    sort_exps_part(et->base, 0, et->len-1, cmp);
+static void sort_exptbl(exptbl_t *et, comparefunc_t cmp) {
+    sort_exps_part(et, 0, et->len-1, cmp);
 }
 
 str_t get_expense_filename(arena_t *a) {
@@ -478,17 +573,33 @@ str_t get_expense_filename(arena_t *a) {
 #endif
 }
 
+// Create expense file if it doesn't exist.
+void touch_expense_file(const char *expfile) {
+    if (!file_exists(expfile)) {
+        FILE *f = fopen(expfile, "a");
+        if (f == NULL) {
+            print_error("Error creating expense file");
+            exit(1);
+        }
+        fclose(f);
+        printf("Expense file created: %s\n", expfile);
+    }
+}
+
 #define BUFLINE_SIZE 1000
-void load_expense_file(const char *srcfile, exptbl_t *exps) {
+void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *exps) {
     FILE *f;
     char buf[BUFLINE_SIZE];
 
-    reset_arena(&exp_arena);
-    init_exptbl(exps, &exp_arena, 100);
+    str_t expfile = get_expense_filename(&scratch);
+    touch_expense_file(expfile.bytes);
 
-    f = fopen(srcfile, "r");
+    reset_arena(exp_arena);
+    init_exptbl(exps, exp_arena, 100);
+
+    f = fopen(expfile.bytes, "r");
     if (f == NULL) {
-        fprintf(stderr, "Error opening '%s': ", srcfile);
+        fprintf(stderr, "Error opening '%s': ", expfile.bytes);
         print_error(NULL);
         return;
     }
