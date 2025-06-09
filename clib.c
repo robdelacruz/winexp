@@ -130,6 +130,81 @@ short strtbl_find(strtbl_t *st, str_t s) {
     return 0;
 }
 
+void init_entrytbl(entrytbl_t *t, arena_t *a, short cap) {
+    if (cap == 0)
+        cap = SIZE_TINY;
+
+    t->arena = a;
+    t->base = aalloc(a, sizeof(entry_t) * cap);
+    t->len = 0;
+    t->cap = cap;
+}
+short entrytbl_add(entrytbl_t *t, entry_t e) {
+    assert(t->cap > 0);
+    assert(t->len >= 0);
+
+    // If out of space, double the capacity.
+    // Create a new memory block with double capacity and copy existing entry table to it.
+    if (t->len >= t->cap) {
+        if (t->cap == SHRT_MAX) {
+            fprintf(stderr, "entrytbl_add() Maximum capacity reached %d\n", t->cap);
+            abort();
+        }
+        int newcap = (int)t->cap * 2;
+        if (newcap > SHRT_MAX)
+            newcap = SHRT_MAX;
+
+        entry_t *newbase = aalloc(t->arena, sizeof(entry_t) * newcap);
+        memcpy(newbase, t->base, sizeof(entry_t) * t->cap);
+        t->base = newbase;
+        t->cap = newcap;
+    }
+
+    t->base[t->len] = e;
+    t->len++;
+    return t->len-1;
+}
+static void swap_entry(entry_t *entries, int i, int j) {
+    entry_t tmp = entries[i];
+    entries[i] = entries[j];
+    entries[j] = tmp;
+}
+static int sort_entrytbl_partition(entrytbl_t *t, int start, int end, cmpfunc_t cmp) {
+    int imid = start;
+    entry_t pivot = t->base[end];
+
+    for (int i=start; i < end; i++) {
+        if (cmp(&t->base[i], &pivot) < 0) {
+            swap_entry(t->base, imid, i);
+            imid++;
+        }
+    }
+    swap_entry(t->base, imid, end);
+    return imid;
+}
+void sort_entrytbl_part(entrytbl_t *t, int start, int end, cmpfunc_t cmp) {
+    if (start >= end)
+        return;
+    int pivot = sort_entrytbl_partition(t, start, end, cmp);
+    sort_entrytbl_part(t, start, pivot-1, cmp);
+    sort_entrytbl_part(t, pivot+1, end, cmp);
+}
+void sort_entrytbl(entrytbl_t *t, cmpfunc_t cmp) {
+    sort_entrytbl_part(t, 0, t->len-1, cmp);
+}
+int cmp_entry_val(void *a, void *b) {
+    entry_t *entrya = a;
+    entry_t *entryb = b;
+    if (entrya->val < entryb->val) return 1;
+    if (entrya->val > entryb->val) return -1;
+    return 0;
+}
+int cmp_entry_desc(void *a, void *b) {
+    entry_t *entrya = a;
+    entry_t *entryb = b;
+    return strcasecmp(entrya->desc.bytes, entryb->desc.bytes);
+}
+
 time_t date_today() {
     return time(NULL);
 }

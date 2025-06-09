@@ -19,8 +19,8 @@ typedef struct {
 } shortdate_t;
 
 int match_date(char *sz, shortdate_t *sd);
-void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t *exp_arena, arena_t scratch);
-void list_categories(time_t startdt, time_t enddt, arena_t *exp_arena, arena_t scratch);
+void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
+void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
 
 const char HELP_ROOT[] = 
 R"(exp - Utility for keeping track and reporting of daily expenses.
@@ -199,9 +199,9 @@ int main(int argc, char *argv[]) {
         else
             printf(HELP_ROOT);
     } else if (str_equals(scmd, "list")) {
-        list_expenses(sarg, startdt, enddt, &exp_arena, scratch_arena);
+        list_expenses(sarg, startdt, enddt, exp_arena, scratch_arena);
     } else if (str_equals(scmd, "cat")) {
-        list_categories(startdt, enddt, &exp_arena, scratch_arena);
+        list_categories(startdt, enddt, exp_arena, scratch_arena);
     } else {
         printf(HELP_ROOT);
     }
@@ -210,13 +210,13 @@ int main(int argc, char *argv[]) {
     free_arena(&scratch_arena);
 }
 
-void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t *exp_arena, arena_t scratch) {
+void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch) {
     char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
     date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
 
     exptbl_t et;
-    load_expense_file(exp_arena, scratch, &et);
+    load_expense_file(&exp_arena, scratch, &et);
     sort_exptbl(&et, cmp_exp_date);
 
     printf("Display: Expenses\n");
@@ -267,13 +267,13 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t *exp_arena,
     printf("%-12s %-30s %9.2f    %-10s\n", "Totals", "", total, "");
 }
 
-void list_categories(time_t startdt, time_t enddt, arena_t *exp_arena, arena_t scratch) {
+void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch) {
     char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
     date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
 
     exptbl_t et;
-    load_expense_file(exp_arena, scratch, &et);
+    load_expense_file(&exp_arena, scratch, &et);
     sort_exptbl(&et, cmp_exp_date);
 
     printf("Display: Categories\n");
@@ -304,6 +304,10 @@ void list_categories(time_t startdt, time_t enddt, arena_t *exp_arena, arena_t s
     // Sort expenses within the date range by categories
     sort_exptbl_part(&et, istart, iend, cmp_exp_cat);
 
+    entry_t catentry;
+    entrytbl_t cattbl;
+    init_entrytbl(&cattbl, &scratch, 20);
+
     double total = 0.0;
     double catsubtotal = 0.0;
     short cur_catid = -1;
@@ -313,8 +317,9 @@ void list_categories(time_t startdt, time_t enddt, arena_t *exp_arena, arena_t s
         total += xp.amt;
 
         if (cur_catid != -1 && xp.catid != cur_catid) {
-            str_t catname = strtbl_get(&et.cats, cur_catid);
-            printf("%-12.12s %12.2f\n", catname.bytes, catsubtotal);
+            catentry.desc = strtbl_get(&et.cats, cur_catid);
+            catentry.val = catsubtotal;
+            entrytbl_add(&cattbl, catentry);
 
             cur_catid = xp.catid;
             catsubtotal = xp.amt;
@@ -326,9 +331,16 @@ void list_categories(time_t startdt, time_t enddt, arena_t *exp_arena, arena_t s
     }
     assert(cur_catid != -1);
 
-    str_t catname = strtbl_get(&et.cats, cur_catid);
-    printf("%-12.12s %12.2f\n", catname.bytes, catsubtotal);
+    catentry.desc = strtbl_get(&et.cats, cur_catid);
+    catentry.val = catsubtotal;
+    entrytbl_add(&cattbl, catentry);
 
+    sort_entrytbl(&cattbl, cmp_entry_val);
+
+    for (int i=0; i < cattbl.len; i++) {
+        entry_t e = cattbl.base[i];
+        printf("%-12.12s %12.2f\n", e.desc.bytes, e.val);
+    }
     printf("------------------------------------------------------------------------\n");
     printf("%-12.12s %12.2f\n", "Totals", total);
 }

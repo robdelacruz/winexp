@@ -12,7 +12,7 @@
 #include "clib.h"
 #include "exp.h"
 
-static exp_t read_expense(char *buf, exptbl_t *exps);
+static exp_t read_expense(char *buf, exptbl_t *et);
 static void chomp(char *buf);
 static char *skip_ws(char *startp);
 static char *next_field(char *startp);
@@ -82,7 +82,7 @@ static void swap_exp(exp_t *exps, int i, int j) {
     exps[i] = exps[j];
     exps[j] = tmp;
 }
-static int sort_exptbl_partition(exptbl_t *et, int start, int end, comparefunc_t cmp) {
+static int sort_exptbl_partition(exptbl_t *et, int start, int end, exptbl_cmpfunc_t cmp) {
     int imid = start;
     exp_t pivot = et->base[end];
 
@@ -95,14 +95,14 @@ static int sort_exptbl_partition(exptbl_t *et, int start, int end, comparefunc_t
     swap_exp(et->base, imid, end);
     return imid;
 }
-void sort_exptbl_part(exptbl_t *et, int start, int end, comparefunc_t cmp) {
+void sort_exptbl_part(exptbl_t *et, int start, int end, exptbl_cmpfunc_t cmp) {
     if (start >= end)
         return;
     int pivot = sort_exptbl_partition(et, start, end, cmp);
     sort_exptbl_part(et, start, pivot-1, cmp);
     sort_exptbl_part(et, pivot+1, end, cmp);
 }
-void sort_exptbl(exptbl_t *et, comparefunc_t cmp) {
+void sort_exptbl(exptbl_t *et, exptbl_cmpfunc_t cmp) {
     sort_exptbl_part(et, 0, et->len-1, cmp);
 }
 
@@ -161,16 +161,12 @@ void touch_expense_file(const char *expfile) {
 }
 
 #define BUFLINE_SIZE 1000
-void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *exps) {
+void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
     FILE *f;
     char buf[BUFLINE_SIZE];
 
     str_t expfile = get_expense_filename(&scratch);
     touch_expense_file(expfile.bytes);
-
-    reset_arena(exp_arena);
-    init_exptbl(exps, exp_arena, 100);
-
     f = fopen(expfile.bytes, "r");
     if (f == NULL) {
         fprintf(stderr, "Error opening '%s': ", expfile.bytes);
@@ -178,6 +174,7 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *exps) {
         return;
     }
 
+    init_exptbl(et, exp_arena, 100);
     while (1) {
         errno = 0;
         char *pz = fgets(buf, sizeof(buf), f);
@@ -188,19 +185,17 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *exps) {
         if (strlen(buf) == 0)
             continue;
 
-        exp_t exp = read_expense(buf, exps);
-        add_exp(exps, exp);
+        exp_t exp = read_expense(buf, et);
+        add_exp(et, exp);
     }
-
     fclose(f);
 }
 
-
-static exp_t read_expense(char *buf, exptbl_t *exps) {
+static exp_t read_expense(char *buf, exptbl_t *et) {
     exp_t retexp;
-    arena_t *arena = exps->arena;
-    strtbl_t *strings = &exps->strings;
-    strtbl_t *cats = &exps->cats;
+    arena_t *arena = et->arena;
+    strtbl_t *strings = &et->strings;
+    strtbl_t *cats = &et->cats;
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee

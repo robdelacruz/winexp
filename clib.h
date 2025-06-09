@@ -80,6 +80,27 @@ void strtbl_replace(strtbl_t *st, short idx, str_t s);
 str_t strtbl_get(strtbl_t *st, short idx);
 short strtbl_find(strtbl_t *st, str_t s);
 
+#define ENTRY(sz, f) (entry_t){STR(sz), f}
+typedef struct {
+    str_t desc;
+    float val;
+} entry_t;
+
+typedef struct {
+    arena_t *arena;
+    entry_t *base;
+    short cap;
+    short len;
+} entrytbl_t;
+
+void init_entrytbl(entrytbl_t *t, arena_t *a, short cap);
+short entrytbl_add(entrytbl_t *t, entry_t e);
+
+typedef int (*cmpfunc_t)(void *a, void *b);
+void sort_entrytbl(entrytbl_t *t, cmpfunc_t cmp);
+int cmp_entry_val(void *a, void *b);
+int cmp_entry_desc(void *a, void *b);
+
 time_t date_today();
 time_t date_from_cal(short year, short month, short day);
 time_t date_from_iso(char *isodate);
