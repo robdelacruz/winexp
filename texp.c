@@ -21,6 +21,10 @@ typedef struct {
 int match_date(char *sz, shortdate_t *sd);
 void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
 void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
+void list_ytd(time_t startdt, arena_t exp_arena, arena_t scratch);
+void prompt_add(char *argv[], int argc, arena_t scratch);
+void prompt_edit(char *argv[], int argc, arena_t scratch);
+void prompt_del(str_t sarg, arena_t scratch);
 
 const char HELP_ROOT[] = 
 R"(exp - Utility for keeping track and reporting of daily expenses.
@@ -59,7 +63,7 @@ R"(exp list - Display list of expenses.
 
 Usage:
 
-    exp list [CAT] [YEAR] | [YEAR-MONTH] | [DATE] | [STARTDATE] [ENDDATE]
+    exp list [CAT] [YEAR | YEAR-MONTH | DATE | STARTDATE ENDDATE]
 
     CAT         : category
     YEAR        : year in YYYY format
@@ -85,29 +89,117 @@ Example:
     exp list 2025-01-01 2025-12-31
 
 )";
+const char HELP_CAT[] =
+R"(exp cat - Display category totals.
+
+Usage:
+
+    exp cat [YEAR | YEAR-MONTH | DATE | STARTDATE ENDDATE]
+
+    YEAR        : year in YYYY format
+    YEAR-MONTH  : year and month in YYYY-MM format
+    DATE        : date in iso date format YYYY-MM-DD
+    STARTDATE   : start date in iso date format YYYY-MM-DD
+    ENDDATE     : end date in iso date format YYYY-MM-DD
+
+    Specify YEAR to show categories occurring on that year.
+    Specify YEAR-MONTH to show categories occurring on that month.
+    Specify DATE to show categories occurring on that date.
+    Specify STARTDATE and/or ENDDATE to specify an inclusive date range.
+
+    If called without any parameters, categories for the current month will be displayed.
+
+Example:
+    exp cat 2019
+    exp cat 2019-04
+    exp cat 2019-04-01
+    exp cat 2019-04-01 2019-04-30
+
+)";
+const char HELP_YTD[] =
+R"(exp ytd - Display year-to-date totals.
+
+Usage:
+
+    exp ytd [YEAR]
+
+    YEAR  : year in YYYY format
+
+    If called without any parameters, the current year will be displayed.
+
+)";
+const char HELP_INFO[] =
+R"(exp info - Display configuration information (expense file location, etc.)
+
+    Set the WINEXPFILE environment var to change the active expense file.
+    Expense file will be created automatically when you add or display expenses
+
+)";
+const char HELP_ADD[] =
+R"(exp add - Add expense.
+
+Usage:
+
+    exp add DESC AMT CAT [DATE]
+
+    DESC : description of expense
+    AMT  : numeric amount
+    CAT  : category name
+    DATE : optional - date in iso date format YYYY-MM-DD
+
+    if DATE is not specified, the current date will be used.
+
+Example:
+    exp add "expense description" 1.23 category_name 2019-04-01
+    exp add "buy groceries" 250.00 groceries
+
+)";
+const char HELP_EDIT[] =
+R"(exp add - Edit expense.
+
+Usage:
+
+    exp edit RECNO
+
+    RECNO : record number of expense to edit
+
+    The record number is the #nnn number in rightmost column of the expense
+    displayed from the [exp list] command.
+
+Example:
+    exp edit 1895
+
+)";
+const char HELP_DEL[] =
+R"(exp add - Delete expense.
+
+Usage:
+
+    exp del RECNO
+
+    RECNO : record number of expense to delete
+
+    The record number is the #nnn number in rightmost column of the expense
+    displayed from the [exp list] command.
+
+Example:
+    exp del 1895
+
+)";
 
 
 int main(int argc, char *argv[]) {
     arena_t exp_arena;
     arena_t scratch_arena;
+    init_arena(&exp_arena, SIZE_LARGE);
+    init_arena(&scratch_arena, SIZE_MEDIUM);
 
-    char *expenses_text_file=NULL;
     shortdate_t dt1={0,0,0};
     shortdate_t dt2={0,0,0};
     shortdate_t tmpdate;
     str_t scmd = STR("");
     str_t sarg = STR("");
-    int z;
 
-    init_arena(&exp_arena, SIZE_LARGE);
-    init_arena(&scratch_arena, SIZE_MEDIUM);
-
-    enum EXPCMD {
-        LIST,
-        CAT,
-        YTD,
-        INFO
-    };
     enum ARGSTEP {
         READ_NONE,
         READ_CMD,
@@ -187,21 +279,41 @@ int main(int argc, char *argv[]) {
         enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
     }
 
-    if (str_equals(scmd, "info")) {
+    if (str_equals(scmd, "help")) {
+        if (str_equals(sarg, "list"))
+            printf(HELP_LIST);
+        else if (str_equals(sarg, "cat"))
+            printf(HELP_CAT);
+        else if (str_equals(sarg, "ytd"))
+            printf(HELP_YTD);
+        else if (str_equals(sarg, "info"))
+            printf(HELP_INFO);
+        else if (str_equals(sarg, "add"))
+            printf(HELP_ADD);
+        else if (str_equals(sarg, "edit"))
+            printf(HELP_EDIT);
+        else if (str_equals(sarg, "del"))
+            printf(HELP_DEL);
+        else
+            printf(HELP_ROOT);
+    } else if (str_equals(scmd, "info")) {
         str_t expfile = get_expense_filename(&scratch_arena);
         printf("exp config info\n\n");
         printf("    expense file  : %s\n\n", expfile.bytes);
         printf("Set the WINEXPFILE environment var to change the active expense file.\n");
         printf("Expense file will be created automatically when you add or display expenses.\n\n");
-    } else if (str_equals(scmd, "help")) {
-        if (str_equals(sarg, "list"))
-            printf(HELP_LIST);
-        else
-            printf(HELP_ROOT);
     } else if (str_equals(scmd, "list")) {
         list_expenses(sarg, startdt, enddt, exp_arena, scratch_arena);
     } else if (str_equals(scmd, "cat")) {
         list_categories(startdt, enddt, exp_arena, scratch_arena);
+    } else if (str_equals(scmd, "ytd")) {
+        list_ytd(startdt, exp_arena, scratch_arena);
+    } else if (str_equals(scmd, "add")) {
+        prompt_add(&argv[1], argc-1, scratch_arena);
+    } else if (str_equals(scmd, "edit")) {
+        prompt_edit(&argv[1], argc-1, scratch_arena);
+    } else if (str_equals(scmd, "del")) {
+        prompt_del(sarg, scratch_arena);
     } else {
         printf(HELP_ROOT);
     }
@@ -343,6 +455,27 @@ void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t sc
     }
     printf("------------------------------------------------------------------------\n");
     printf("%-12.12s %12.2f\n", "Totals", total);
+}
+
+void list_ytd(time_t startdt, arena_t exp_arena, arena_t scratch) {
+}
+
+void prompt_add(char *argv[], int argc, arena_t scratch) {
+    str_t desc = STR("");
+    str_t samt = STR("");
+    str_t scat = STR("");
+
+    if (argc < 2) {
+        printf(HELP_ADD);
+        return;
+    }
+
+}
+
+void prompt_edit(char *argv[], int argc, arena_t scratch) {
+}
+
+void prompt_del(str_t sarg, arena_t scratch) {
 }
 
 void print_tables(exptbl_t et) {
