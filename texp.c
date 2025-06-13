@@ -22,7 +22,7 @@ int match_date(char *sz, shortdate_t *sd);
 void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
 void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
 void list_ytd(time_t startdt, arena_t exp_arena, arena_t scratch);
-void prompt_add(char *argv[], int argc, arena_t scratch);
+void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_edit(char *argv[], int argc, arena_t scratch);
 void prompt_del(str_t sarg, arena_t scratch);
 
@@ -309,7 +309,7 @@ int main(int argc, char *argv[]) {
     } else if (str_equals(scmd, "ytd")) {
         list_ytd(startdt, exp_arena, scratch_arena);
     } else if (str_equals(scmd, "add")) {
-        prompt_add(argv+1, argc-1, scratch_arena);
+        prompt_add(argv+1, argc-1, exp_arena, scratch_arena);
     } else if (str_equals(scmd, "edit")) {
         prompt_edit(&argv[1], argc-1, scratch_arena);
     } else if (str_equals(scmd, "del")) {
@@ -468,73 +468,95 @@ static void chomp(char *buf) {
             buf[i] = '\0';
     }
 }
-#define BUFSIZE 1024
-static str_t read_input(const char *prompt, arena_t *a) {
-    char buf[BUFSIZE];
-    char *pz;
+static void read_input(const char *prompt, char *buf, short bufsize) {
+    if (prompt != NULL)
+        printf("%s", prompt);
 
-    printf("%s", prompt);
-
-    pz = fgets(buf, sizeof(buf), stdin);
+    memset(buf, 0, bufsize);
+    char *pz = fgets(buf, bufsize, stdin);
     if (pz == NULL) {
         perror("Error reading input");
         exit(1);
     }
     chomp(buf);
-    return new_str(a, buf);
 }
-void prompt_add(char *argv[], int argc, arena_t scratch) {
+void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
+    char buf[1024];
     str_t desc = STR("");
-    str_t samt = STR("");
-    str_t scat = STR("");
-    str_t sdate = STR("");
     float amt=0.0;
+    str_t scat = STR("");
     time_t dt=0;
-    shortdate_t tmpdate;
     int z;
 
-    printf("prompt_add() argc: %d\n", argc);
-
-    if (argc >= 2)
-        printf("[1]: %s\n", argv[1]);
-    if (argc >= 3)
-        printf("[2]: %s\n", argv[2]);
-    if (argc >= 4)
-        printf("[3]: %s\n", argv[3]);
-    if (argc >= 5)
-        printf("[4]: %s\n", argv[4]);
+    exptbl_t et;
+    load_expense_file(&exp_arena, scratch, &et);
 
     // argv[]: add [DESC] [AMT] [CAT] [DATE]
-    if (argc >= 2)
-        desc = new_str(&scratch, argv[1]);
-    if (argc >= 3)
-        samt = new_str(&scratch, argv[2]);
-    if (argc >= 4)
-        scat = new_str(&scratch, argv[3]);
-    if (argc >= 5)
-        sdate = new_str(&scratch, argv[4]);
 
+    // DESC
     while (1) {
-        if (desc.len == 0)
-            desc = read_input("Expense Description: ", &scratch);
-        if (samt.len == 0)
-            samt = read_input("Amount: ", &scratch);
-        if (scat.len == 0)
-            scat = read_input("Category: ", &scratch);
-        if (sdate.len == 0)
-            sdate = read_input("Date (yyyy-mm-dd): ", &scratch);
-
-        amt = atof(samt.bytes);
-        if (amt == 0)
-            samt = STR("");
-        if (!match_date(sdate.bytes, &tmpdate))
-            sdate = STR("");
-        else
-            dt = date_from_cal(tmpdate.year, tmpdate.month, tmpdate.day);
-
-        if (desc.len > 0 && amt > 0 && scat.len > 0 && dt > 0)
+        if (argc >= 2) {
+            desc = new_str(&scratch, argv[1]);
+        } else {
+            read_input("Expense Description: ", buf, sizeof(buf));
+            desc = new_str(&scratch, buf);
+        }
+        if (desc.len > 0)
             break;
     }
+    // AMT
+    while (1) {
+        if (argc >= 3) {
+            amt = atof(argv[2]);
+        } else {
+            read_input("Amount: ", buf, sizeof(buf));
+            amt = atof(buf);
+        }
+        // Don't allow zero amt? Currently amt=0 allowed.
+        break;
+    }
+    // CAT
+    while (1) {
+        if (argc >= 4) {
+            scat = new_str(&scratch, argv[3]);
+        } else {
+            for (int i=1; i < et.cats.len; i++) {
+                str_t scat = et.cats.base[i];
+                printf("[%d] %s\n", i, scat.bytes);
+            }
+            printf("\n");
+            read_input("Select category [n] or enter new category: ", buf, sizeof(buf));
+            scat = new_str(&scratch, buf);
+        }
+        if (scat.len > 0)
+            break;
+    }
+
+    // DATE
+    regex_t reg;
+    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
+    assert(z == 0);
+    while (1) {
+        str_t sdate;
+        if (argc >= 5) {
+            sdate = new_str(&scratch, argv[4]);
+        } else {
+            read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
+            sdate = new_str(&scratch, buf);
+            if (sdate.len == 0) {
+                dt = date_today();
+                break;
+            }
+        }
+        if (regexec(&reg, sdate.bytes, 0, NULL, 0) == 0) {
+            dt = date_from_iso(sdate.bytes);
+            if (dt > 0)
+                break;
+        }
+    }
+    regfree(&reg);
+
+    assert(desc.len > 0 && scat.len > 0 && dt > 0);
 }
 
 void prompt_edit(char *argv[], int argc, arena_t scratch) {
