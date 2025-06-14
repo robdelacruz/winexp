@@ -363,13 +363,13 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, 
         exp_t xp = et.base[i];
         assert(xp.date >= startdt && xp.date < enddt);
 
-        str_t catname = strtbl_get(&et.cats, xp.catid);
+        str_t catname = strtbl_get(et.cats, xp.catid);
         if (scat.len > 0 && strcmp(catname.bytes, scat.bytes) != 0)
             continue;
 
         char sdate[ISO_DATE_LEN+1];
         date_to_iso(xp.date, sdate, sizeof(sdate));
-        str_t desc = strtbl_get(&et.strings, xp.descid);
+        str_t desc = strtbl_get(et.strings, xp.descid);
         printf("%-12s %-30.30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i+1);
 
         total += xp.amt;
@@ -377,6 +377,14 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, 
 
     printf("------------------------------------------------------------------------\n");
     printf("%-12s %-30s %9.2f    %-10s\n", "Totals", "", total, "");
+
+/*
+    printf("categories:\n");
+    for (int i=1; i < et.cats.len; i++) {
+        str_t s = strtbl_get(et.cats, i);
+        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
+    }
+*/
 }
 
 void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch) {
@@ -429,7 +437,7 @@ void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t sc
         total += xp.amt;
 
         if (cur_catid != -1 && xp.catid != cur_catid) {
-            catentry.desc = strtbl_get(&et.cats, cur_catid);
+            catentry.desc = strtbl_get(et.cats, cur_catid);
             catentry.val = catsubtotal;
             entrytbl_add(&cattbl, catentry);
 
@@ -443,7 +451,7 @@ void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t sc
     }
     assert(cur_catid != -1);
 
-    catentry.desc = strtbl_get(&et.cats, cur_catid);
+    catentry.desc = strtbl_get(et.cats, cur_catid);
     catentry.val = catsubtotal;
     entrytbl_add(&cattbl, catentry);
 
@@ -482,9 +490,9 @@ static void read_input(const char *prompt, char *buf, short bufsize) {
 }
 void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     char buf[1024];
-    str_t desc = STR("");
+    short descid=0;
     float amt=0.0;
-    str_t scat = STR("");
+    short catid=0;
     time_t dt=0;
     int z;
 
@@ -495,14 +503,19 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
 
     // DESC
     while (1) {
+        str_t desc = STR("");
         if (argc >= 2) {
             desc = new_str(&scratch, argv[1]);
         } else {
             read_input("Expense Description: ", buf, sizeof(buf));
             desc = new_str(&scratch, buf);
         }
-        if (desc.len > 0)
-            break;
+        if (desc.len == 0)
+            continue;
+
+        // Add description to strings table.
+        descid = strtbl_add(&et.strings, desc);
+        break;
     }
     // AMT
     while (1) {
@@ -517,19 +530,35 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
     // CAT
     while (1) {
+        str_t scat = STR("");
         if (argc >= 4) {
             scat = new_str(&scratch, argv[3]);
         } else {
-            for (int i=1; i < et.cats.len; i++) {
-                str_t scat = et.cats.base[i];
-                printf("[%d] %s\n", i, scat.bytes);
-            }
+            for (int i=1; i < et.cats.len; i++)
+                printf("[%d] %s\n", i, et.cats.base[i].bytes);
             printf("\n");
-            read_input("Select category [n] or enter new category: ", buf, sizeof(buf));
+
+            read_input("Enter [n] or category name: ", buf, sizeof(buf));
             scat = new_str(&scratch, buf);
         }
-        if (scat.len > 0)
+        if (scat.len == 0)
+            continue;
+        if (str_equals(scat, "0"))
+            continue;
+
+        // Selected existing category index.
+        catid = atoi(scat.bytes);
+        if (catid > 0 && catid < et.cats.len)
             break;
+
+        // Entered existing category name.
+        catid = strtbl_find(et.cats, scat);
+        if (catid != 0)
+            break;
+
+        // Add new category to category table.
+        catid = strtbl_add(&et.cats, scat);
+        break;
     }
 
     // DATE
@@ -556,7 +585,20 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
     regfree(&reg);
 
-    assert(desc.len > 0 && scat.len > 0 && dt > 0);
+    assert(descid > 0 && catid > 0 && dt > 0);
+
+    exp_t exp;
+    exp.date = dt;
+    exp.descid = descid;
+    exp.amt = amt;
+    exp.catid = catid;
+
+    add_exp(&et, exp);
+
+    char isodate[ISO_DATE_LEN+1];
+    date_to_iso(exp.date, isodate, sizeof(isodate));
+    printf("\n\n%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, descid).bytes, exp.amt, strtbl_get(et.cats, catid).bytes);
+
 }
 
 void prompt_edit(char *argv[], int argc, arena_t scratch) {
@@ -568,19 +610,19 @@ void prompt_del(str_t sarg, arena_t scratch) {
 void print_tables(exptbl_t et) {
     printf("expense_strings:\n");
     for (int i=1; i < et.strings.len; i++) {
-        str_t s = strtbl_get(&et.strings, i);
+        str_t s = strtbl_get(et.strings, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
     printf("expenses:\n");
     for (int i=0; i < et.len; i++) {
         exp_t xp = et.base[i];
-        str_t desc = strtbl_get(&et.strings, xp.descid);
-        str_t catname = strtbl_get(&et.cats, xp.catid);
+        str_t desc = strtbl_get(et.strings, xp.descid);
+        str_t catname = strtbl_get(et.cats, xp.catid);
         printf("%d: '%.*s' %.2f '%.*s'\n", i, desc.len, desc.bytes, xp.amt, catname.len, catname.bytes);
     }
     printf("categories:\n");
     for (int i=1; i < et.cats.len; i++) {
-        str_t s = strtbl_get(&et.cats, i);
+        str_t s = strtbl_get(et.cats, i);
         printf("[%d] '%.*s'\n", i, s.len, s.bytes);
     }
 }

@@ -86,6 +86,13 @@ void init_strtbl(strtbl_t *st, arena_t *a, short cap) {
     st->len = 1;
     st->cap = cap;
 }
+strtbl_t dup_strtbl(strtbl_t st, arena_t *a) {
+    strtbl_t dupst;
+    init_strtbl(&dupst, a, st.cap);
+    dupst.len = st.len;
+    memcpy(dupst.base, st.base, sizeof(str_t) * st.cap);
+    return dupst;
+}
 short strtbl_add(strtbl_t *st, str_t s) {
     assert(st->cap > 0);
     assert(st->len >= 0);
@@ -117,17 +124,52 @@ void strtbl_replace(strtbl_t *st, short idx, str_t s) {
         return;
     st->base[idx] = s;
 }
-str_t strtbl_get(strtbl_t *st, short idx) {
-    if (idx >= st->len)
+str_t strtbl_get(strtbl_t st, short idx) {
+    if (idx >= st.len)
         return STR("");
-    return st->base[idx];
+    return st.base[idx];
 }
-short strtbl_find(strtbl_t *st, str_t s) {
-    for (int i=1; i < st->len; i++) {
-        if (strcmp(s.bytes, st->base[i].bytes) == 0)
+short strtbl_find(strtbl_t st, str_t s) {
+    for (int i=1; i < st.len; i++) {
+        if (strcmp(s.bytes, st.base[i].bytes) == 0)
             return i;
     }
     return 0;
+}
+
+static void swap_str(str_t *strs, int i, int j) {
+    str_t tmp = strs[i];
+    strs[i] = strs[j];
+    strs[j] = tmp;
+}
+static int sort_strtbl_partition(strtbl_t *t, int start, int end, cmpfunc_t cmp) {
+    int imid = start;
+    str_t pivot = t->base[end];
+
+    for (int i=start; i < end; i++) {
+        if (cmp(&t->base[i], &pivot) < 0) {
+            swap_str(t->base, imid, i);
+            imid++;
+        }
+    }
+    swap_str(t->base, imid, end);
+    return imid;
+}
+void sort_strtbl_part(strtbl_t *t, int start, int end, cmpfunc_t cmp) {
+    if (start >= end)
+        return;
+    int pivot = sort_strtbl_partition(t, start, end, cmp);
+    sort_strtbl_part(t, start, pivot-1, cmp);
+    sort_strtbl_part(t, pivot+1, end, cmp);
+}
+void sort_strtbl(strtbl_t *t, cmpfunc_t cmp) {
+    // [0] element is always "" so don't include in sorting.
+    sort_strtbl_part(t, 1, t->len-1, cmp);
+}
+int cmp_str(void *a, void *b) {
+    str_t *stra = a;
+    str_t *strb = b;
+    return strcmp(stra->bytes, strb->bytes);
 }
 
 void init_entrytbl(entrytbl_t *t, arena_t *a, short cap) {

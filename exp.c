@@ -17,7 +17,7 @@ static void chomp(char *buf);
 static char *skip_ws(char *startp);
 static char *next_field(char *startp);
 
-void init_exptbl(exptbl_t *et, arena_t *a, short cap) {
+void init_exptbl(exptbl_t *et, short cap, arena_t *a) {
     et->arena = a;
     et->base = aalloc(a, sizeof(exp_t) * cap);
     et->len = 0;
@@ -72,8 +72,8 @@ int cmp_exp_date(exptbl_t *et, void *a, void *b) {
 int cmp_exp_cat(exptbl_t *et, void *a, void *b) {
     exp_t *expa = a;
     exp_t *expb = b;
-    str_t cata = strtbl_get(&et->cats, expa->catid);
-    str_t catb = strtbl_get(&et->cats, expb->catid);
+    str_t cata = strtbl_get(et->cats, expa->catid);
+    str_t catb = strtbl_get(et->cats, expb->catid);
 
     return strcasecmp(cata.bytes, catb.bytes);
 }
@@ -160,10 +160,9 @@ void touch_expense_file(const char *expfile) {
     }
 }
 
-#define BUFLINE_SIZE 1000
 void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
     FILE *f;
-    char buf[BUFLINE_SIZE];
+    char buf[1024];
 
     str_t expfile = get_expense_filename(&scratch);
     touch_expense_file(expfile.bytes);
@@ -174,7 +173,7 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
         return;
     }
 
-    init_exptbl(et, exp_arena, 100);
+    init_exptbl(et, 100, exp_arena);
     while (1) {
         errno = 0;
         char *pz = fgets(buf, sizeof(buf), f);
@@ -189,13 +188,22 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
         add_exp(et, exp);
     }
     fclose(f);
+
+    // Sort categories table alphabetically
+    strtbl_t tmpcats = dup_strtbl(et->cats, &scratch);
+    sort_strtbl(&et->cats, cmp_str);
+
+    // Re-set exp catid's to new sorted categories table.
+    for (int i=0; i < et->len; i++) {
+        exp_t *exp = &et->base[i];
+        str_t catname = strtbl_get(tmpcats, exp->catid);
+        exp->catid = strtbl_find(et->cats, catname);
+    }
 }
 
 static exp_t read_expense(char *buf, exptbl_t *et) {
     exp_t retexp;
     arena_t *arena = et->arena;
-    strtbl_t *strings = &et->strings;
-    strtbl_t *cats = &et->cats;
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee
@@ -215,7 +223,7 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     // description
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.descid = strtbl_add(strings, new_str(arena, pfield));
+    retexp.descid = strtbl_add(&et->strings, new_str(arena, pfield));
 
     // amount
     pfield = nextp;
@@ -225,9 +233,9 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     // category
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.catid = strtbl_find(cats, (str_t){pfield, strlen(pfield)});
+    retexp.catid = strtbl_find(et->cats, (str_t){pfield, strlen(pfield)});
     if (retexp.catid == 0) {
-        retexp.catid = strtbl_add(cats, new_str(arena, pfield));
+        retexp.catid = strtbl_add(&et->cats, new_str(arena, pfield));
     }
 
     return retexp;
@@ -258,5 +266,20 @@ static char *next_field(char *startp) {
     }
 
     return p;
+}
+
+void save_expense_file(exptbl_t *et, arena_t scratch) {
+    FILE *f;
+    char buf[1024];
+
+    str_t expfile = get_expense_filename(&scratch);
+    f = fopen(expfile.bytes, "w");
+    if (f == NULL) {
+        fprintf(stderr, "Error opening '%s': ", expfile.bytes);
+        print_error(NULL);
+        return;
+    }
+
+    fclose(f);
 }
 

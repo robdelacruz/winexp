@@ -67,6 +67,8 @@ str_t new_str(arena_t *a, char *sz);
 str_t dup_str(arena_t *a, str_t src);
 int str_equals(str_t s, char *sz);
 
+typedef int (*cmpfunc_t)(void *a, void *b);
+
 typedef struct {
     arena_t *arena;
     str_t *base;
@@ -75,10 +77,14 @@ typedef struct {
 } strtbl_t;
 
 void init_strtbl(strtbl_t *st, arena_t *a, short cap);
+strtbl_t dup_strtbl(strtbl_t st, arena_t *a);
 short strtbl_add(strtbl_t *st, str_t s);
 void strtbl_replace(strtbl_t *st, short idx, str_t s);
-str_t strtbl_get(strtbl_t *st, short idx);
-short strtbl_find(strtbl_t *st, str_t s);
+str_t strtbl_get(strtbl_t st, short idx);
+short strtbl_find(strtbl_t st, str_t s);
+
+void sort_strtbl(strtbl_t *t, cmpfunc_t cmp);
+int cmp_str(void *a, void *b);
 
 #define ENTRY(sz, f) (entry_t){STR(sz), f}
 typedef struct {
@@ -96,7 +102,6 @@ typedef struct {
 void init_entrytbl(entrytbl_t *t, arena_t *a, short cap);
 short entrytbl_add(entrytbl_t *t, entry_t e);
 
-typedef int (*cmpfunc_t)(void *a, void *b);
 void sort_entrytbl(entrytbl_t *t, cmpfunc_t cmp);
 int cmp_entry_val(void *a, void *b);
 int cmp_entry_desc(void *a, void *b);
