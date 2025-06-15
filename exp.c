@@ -279,8 +279,7 @@ void save_expense_file(exptbl_t et, arena_t scratch) {
         char backupfile[2048];
         snprintf(backupfile, sizeof(backupfile), "%s.bak", expfile.bytes);
 
-        if (remove(backupfile))
-            perror("Error removing previous backup file");
+        remove(backupfile);
         if (rename(expfile.bytes, backupfile))
             perror("Error creating backup file");
     }
@@ -298,7 +297,7 @@ void save_expense_file(exptbl_t et, arena_t scratch) {
         date_to_iso(exp.date, isodate, sizeof(isodate));
         str_t sdesc = strtbl_get(et.strings, exp.descid);
         str_t scat = strtbl_get(et.cats, exp.catid);
-        fprintf(f, "%s; %s; %s; %f; %s\n", isodate, "00:00", sdesc.bytes, exp.amt, scat.bytes);
+        fprintf(f, "%s; %s; %s; %.2f; %s\n", isodate, "00:00", sdesc.bytes, exp.amt, scat.bytes);
     }
     fclose(f);
 }

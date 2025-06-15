@@ -538,7 +538,10 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
                 printf("[%d] %s\n", i, et.cats.base[i].bytes);
             printf("\n");
 
-            read_input("Enter [n] or category name: ", buf, sizeof(buf));
+            if (et.cats.len > 1)
+                read_input("Enter [n] or category name: ", buf, sizeof(buf));
+            else
+                read_input("Enter category name: ", buf, sizeof(buf));
             scat = new_str(&scratch, buf);
         }
         if (scat.len == 0)
