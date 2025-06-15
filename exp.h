@@ -27,7 +27,7 @@ typedef struct {
 str_t get_expense_filename(arena_t *a);
 void touch_expense_file(const char *expfile);
 void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et);
-void save_expense_file(exptbl_t *et, arena_t scratch);
+void save_expense_file(exptbl_t et, arena_t scratch);
 
 void init_exptbl(exptbl_t *et, short cap, arena_t *a);
 short add_exp(exptbl_t *et, exp_t exp);

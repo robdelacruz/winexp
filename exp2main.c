@@ -599,6 +599,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     date_to_iso(exp.date, isodate, sizeof(isodate));
     printf("\n\n%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, descid).bytes, exp.amt, strtbl_get(et.cats, catid).bytes);
 
+    save_expense_file(et, scratch);
 }
 
 void prompt_edit(char *argv[], int argc, arena_t scratch) {

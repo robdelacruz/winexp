@@ -111,7 +111,7 @@ str_t get_expense_filename(arena_t *a) {
     static char expenses_filename[] = "expenses";
     char *path;
 
-    path = getenv("WINEXPFILE");
+    path = getenv("EXP2FILE");
     if (path != NULL && strlen(path) > 0)
         return new_str(a, path);
 
@@ -268,18 +268,38 @@ static char *next_field(char *startp) {
     return p;
 }
 
-void save_expense_file(exptbl_t *et, arena_t scratch) {
+void save_expense_file(exptbl_t et, arena_t scratch) {
     FILE *f;
-    char buf[1024];
+    char isodate[ISO_DATE_LEN+1];
 
     str_t expfile = get_expense_filename(&scratch);
+
+    // Back up expense file to .bak before overwriting it.
+    if (file_exists(expfile.bytes)) {
+        char backupfile[2048];
+        snprintf(backupfile, sizeof(backupfile), "%s.bak", expfile.bytes);
+
+        if (remove(backupfile))
+            perror("Error removing previous backup file");
+        if (rename(expfile.bytes, backupfile))
+            perror("Error creating backup file");
+    }
+
     f = fopen(expfile.bytes, "w");
     if (f == NULL) {
         fprintf(stderr, "Error opening '%s': ", expfile.bytes);
         print_error(NULL);
         return;
     }
+    sort_exptbl(&et, cmp_exp_date);
 
+    for (int i=0; i < et.len; i++) {
+        exp_t exp = et.base[i];
+        date_to_iso(exp.date, isodate, sizeof(isodate));
+        str_t sdesc = strtbl_get(et.strings, exp.descid);
+        str_t scat = strtbl_get(et.cats, exp.catid);
+        fprintf(f, "%s; %s; %s; %f; %s\n", isodate, "00:00", sdesc.bytes, exp.amt, scat.bytes);
+    }
     fclose(f);
 }
 

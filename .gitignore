@@ -1,6 +1,7 @@
 *.swp
 *.o
-texp.exe
-texp
-expenses
+exp2.exe
+exp2
+expenses2
+*.bak
 
