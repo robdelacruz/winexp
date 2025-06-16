@@ -25,6 +25,11 @@ void init_exptbl(exptbl_t *et, short cap, arena_t *a) {
     init_strtbl(&et->strings, a, 512);
     init_strtbl(&et->cats, a, 8);
 }
+exp_t *get_exp(exptbl_t *et, short idx) {
+    if (idx >= et->len)
+        return NULL;
+    return &et->base[idx];
+}
 short add_exp(exptbl_t *et, exp_t exp) {
     assert(et->cap > 0);
     assert(et->len >= 0);
@@ -56,10 +61,15 @@ void replace_exp(exptbl_t *et, short idx, exp_t exp) {
         return;
     et->base[idx] = exp;
 }
-exp_t *get_exp(exptbl_t *et, short idx) {
+void del_exp(exptbl_t *et, short idx) {
+    assert(idx < et->len);
     if (idx >= et->len)
-        return NULL;
-    return &et->base[idx];
+        return;
+
+    // Move last expense into slot for expense to delete.
+    exp_t lastexp = et->base[et->len-1];
+    et->base[idx] = lastexp;
+    et->len--;
 }
 
 int cmp_exp_date(exptbl_t *et, void *a, void *b) {
@@ -148,7 +158,7 @@ static int file_exists(const char *file) {
         return 0;
 }
 // Create expense file if it doesn't exist.
-void touch_expense_file(const char *expfile) {
+int touch_expense_file(const char *expfile) {
     if (!file_exists(expfile)) {
         FILE *f = fopen(expfile, "a");
         if (f == NULL) {
@@ -158,19 +168,24 @@ void touch_expense_file(const char *expfile) {
         fclose(f);
         printf("Expense file created: %s\n", expfile);
     }
+    return 0;
 }
 
-void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
+int load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
     FILE *f;
     char buf[1024];
+    int z;
 
     str_t expfile = get_expense_filename(&scratch);
-    touch_expense_file(expfile.bytes);
+    z = touch_expense_file(expfile.bytes);
+    if (z != 0)
+        return z;
+
     f = fopen(expfile.bytes, "r");
     if (f == NULL) {
         fprintf(stderr, "Error opening '%s': ", expfile.bytes);
         print_error(NULL);
-        return;
+        return 1;
     }
 
     init_exptbl(et, 100, exp_arena);
@@ -189,6 +204,9 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
     }
     fclose(f);
 
+    // Sort expenses by date.
+    sort_exptbl(et, cmp_exp_date);
+
     // Sort categories table alphabetically
     strtbl_t tmpcats = dup_strtbl(et->cats, &scratch);
     sort_strtbl(&et->cats, cmp_str);
@@ -199,6 +217,7 @@ void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
         str_t catname = strtbl_get(tmpcats, exp->catid);
         exp->catid = strtbl_find(et->cats, catname);
     }
+    return 0;
 }
 
 static exp_t read_expense(char *buf, exptbl_t *et) {
@@ -268,7 +287,7 @@ static char *next_field(char *startp) {
     return p;
 }
 
-void save_expense_file(exptbl_t et, arena_t scratch) {
+int save_expense_file(exptbl_t et, arena_t scratch) {
     FILE *f;
     char isodate[ISO_DATE_LEN+1];
 
@@ -288,7 +307,7 @@ void save_expense_file(exptbl_t et, arena_t scratch) {
     if (f == NULL) {
         fprintf(stderr, "Error opening '%s': ", expfile.bytes);
         print_error(NULL);
-        return;
+        return 1;
     }
     sort_exptbl(&et, cmp_exp_date);
 
@@ -300,5 +319,6 @@ void save_expense_file(exptbl_t et, arena_t scratch) {
         fprintf(f, "%s; %s; %s; %.2f; %s\n", isodate, "00:00", sdesc.bytes, exp.amt, scat.bytes);
     }
     fclose(f);
+    return 0;
 }
 

@@ -25,14 +25,15 @@ typedef struct {
 } exptbl_t;
 
 str_t get_expense_filename(arena_t *a);
-void touch_expense_file(const char *expfile);
-void load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et);
-void save_expense_file(exptbl_t et, arena_t scratch);
+int touch_expense_file(const char *expfile);
+int load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et);
+int save_expense_file(exptbl_t et, arena_t scratch);
 
 void init_exptbl(exptbl_t *et, short cap, arena_t *a);
+exp_t *get_exp(exptbl_t *et, short idx);
 short add_exp(exptbl_t *et, exp_t exp);
 void replace_exp(exptbl_t *et, short idx, exp_t exp);
-exp_t *get_exp(exptbl_t *et, short idx);
+void del_exp(exptbl_t *et, short idx);
 
 typedef int (*exptbl_cmpfunc_t)(exptbl_t *et, void *a, void *b);
 void sort_exptbl(exptbl_t *et, exptbl_cmpfunc_t cmp);
