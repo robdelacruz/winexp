@@ -519,97 +519,103 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     time_t dt=0;
     int z;
 
+    str_t sdesc = STR("");
+    str_t samt = STR("");
+
+    regex_t reg;
+    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
+    assert(z == 0);
+
     exptbl_t et;
     z = load_expense_file(&exp_arena, scratch, &et);
     if (z != 0)
         return;
 
     // argv[]: [DESC] [AMT] [CAT] [DATE]
+    if (argc >= 1)
+        sdesc = new_str(&scratch, argv[0]);
+    if (argc >= 2)
+        samt = new_str(&scratch, argv[1]);
+    if (argc >= 3) {
+        // Check if existing category name
+        // If not existing, add it.
+        str_t scat = new_str(&scratch, argv[2]);
+        catid = strtbl_find(et.cats, scat);
+        if (catid == 0)
+            catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
+    }
+    if (argc >= 4) {
+        char *szdate = argv[3];
+        str_t sdate = new_str(&scratch, szdate);
+        if (szequals(szdate, "-") || szequals(szdate, "today"))
+            dt = date_today();
+        else if (regexec(&reg, szdate, 0, NULL, 0) == 0)
+            dt = date_from_iso(szdate);
+    }
 
     // DESC
-    while (1) {
-        str_t desc = STR("");
-        if (argc >= 1) {
-            desc = new_str(&scratch, argv[0]);
-        } else {
-            read_input("Expense Description: ", buf, sizeof(buf));
-            desc = new_str(&scratch, buf);
+    while (sdesc.len == 0) {
+        read_input("Expense Description: ", buf, sizeof(buf));
+        if (strlen(buf) > 0) {
+            sdesc = new_str(&scratch, buf);
+            break;
         }
-        if (desc.len == 0)
-            continue;
-
-        // Add description to strings table.
-        descid = strtbl_add(&et.strings, desc);
-        break;
     }
+    descid = strtbl_add(&et.strings, sdesc);
+
     // AMT
-    while (1) {
-        if (argc >= 2) {
-            amt = atof(argv[1]);
-        } else {
-            read_input("Amount: ", buf, sizeof(buf));
-            amt = atof(buf);
-        }
-        // Don't allow zero amt? Currently amt=0 allowed.
-        break;
+    if (samt.len == 0) {
+        read_input("Amount: ", buf, sizeof(buf));
+        if (strlen(buf) > 0)
+            samt = new_str(&scratch, buf);
     }
+    amt = atof(samt.bytes);
+
     // CAT
-    while (1) {
-        str_t scat = STR("");
-        if (argc >= 3) {
-            scat = new_str(&scratch, argv[2]);
-        } else {
-            for (int i=1; i < et.cats.len; i++)
-                printf("[%d] %s\n", i, et.cats.base[i].bytes);
-            printf("\n");
+    while (catid == 0) {
+        for (int i=1; i < et.cats.len; i++)
+            printf("[%d] %s\n", i, et.cats.base[i].bytes);
+        printf("\n");
 
-            if (et.cats.len > 1)
-                read_input("Enter [n] or category name: ", buf, sizeof(buf));
-            else
-                read_input("Enter category name: ", buf, sizeof(buf));
-            scat = new_str(&scratch, buf);
+        if (et.cats.len > 1)
+            read_input("Enter [n] or category name: ", buf, sizeof(buf));
+        else
+            read_input("Enter category name: ", buf, sizeof(buf));
+
+        if (strlen(buf) == 0)
+            continue;
+        if (szequals(buf, "0"))
+            continue;
+
+        catid = atoi(buf);
+        if (catid < 0 || catid >= et.cats.len) {
+            catid = 0;
+            continue;
         }
-        if (scat.len == 0)
-            continue;
-        if (str_equals(scat, "0"))
-            continue;
-
-        // Selected existing category index.
-        catid = atoi(scat.bytes);
-        if (catid > 0 && catid < et.cats.len)
+        // Selected category index.
+        if (catid >= 1 && catid < et.cats.len)
             break;
 
         // Entered existing category name.
+        str_t scat = new_str(&scratch, buf);
         catid = strtbl_find(et.cats, scat);
         if (catid != 0)
             break;
 
         // Add new category to category table.
-        catid = strtbl_add(&et.cats, scat);
+        catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
         break;
     }
 
     // DATE
-    regex_t reg;
-    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
-    assert(z == 0);
-    while (1) {
-        str_t sdate;
-        if (argc >= 4) {
-            sdate = new_str(&scratch, argv[3]);
-        } else {
-            read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
-            sdate = new_str(&scratch, buf);
-            if (sdate.len == 0) {
-                dt = date_today();
-                break;
-            }
-        }
-        if (regexec(&reg, sdate.bytes, 0, NULL, 0) == 0) {
-            dt = date_from_iso(sdate.bytes);
-            if (dt > 0)
-                break;
-        }
+    while (dt == 0) {
+        read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
+        if (strlen(buf) == 0)
+            dt = date_today();
+        if (szequals(buf, "-") || szequals(buf, "today"))
+            dt = date_today();
+        if (regexec(&reg, buf, 0, NULL, 0) == 0)
+            dt = date_from_iso(buf);
     }
     regfree(&reg);
 
