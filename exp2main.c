@@ -19,8 +19,8 @@ typedef struct {
 } shortdate_t;
 
 int match_date(char *sz, shortdate_t *sd);
-void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
-void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch);
+void list_expenses(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
+void list_categories(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void list_ytd(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
@@ -194,140 +194,147 @@ int main(int argc, char *argv[]) {
     init_arena(&exp_arena, SIZE_LARGE);
     init_arena(&scratch_arena, SIZE_MEDIUM);
 
-    str_t scmd = STR("");
-    str_t sarg = STR("");
-    time_t startdt=0, enddt=0;
+    // argv[]: exp2 CMD [args...]
+    // Skip over program name.
+    argv++;
+    argc--;
 
-    shortdate_t dt1={0,0,0};
-    shortdate_t dt2={0,0,0};
-    shortdate_t tmpdate;
-
-    enum ARGSTEP {
-        READ_NONE,
-        READ_CMD,
-        READ_ARG,
-        READ_DATE1,
-        READ_DATE2
-    } argstep = READ_NONE;
-
-    for (int i=1; i < argc; i++) {
-        char *arg = argv[i];
-
-        if (argstep == READ_NONE) {
-            scmd = new_str(&scratch_arena, arg);
-            argstep = READ_CMD;
-            if (!str_equals(scmd, "list") && !str_equals(scmd, "cat"))
-                break;
-            continue;
-        } else if (argstep == READ_CMD) {
-            if (match_date(arg, &tmpdate)) {
-                dt1 = tmpdate;
-                argstep = READ_DATE1;
-            } else {
-                sarg = new_str(&scratch_arena, arg);
-                argstep = READ_ARG;
-            }
-            continue;
-        }
-        if (argstep == READ_ARG) {
-            if (match_date(arg, &tmpdate)) {
-                dt1 = tmpdate;
-                argstep = READ_DATE1;
-            }
-            continue;
-        }
-        if (argstep == READ_DATE1) {
-            if (match_date(arg, &tmpdate)) {
-                dt2 = tmpdate;
-                argstep = READ_DATE2;
-            }
-            continue;
-        }
+    char *scmd = *argv;
+    if (scmd == NULL) {
+        printf(HELP_ROOT);
+        return 0;
     }
-
-    if (str_equals(scmd, "list") || str_equals(scmd, "cat")) {
-        shortdate_t today;
-        date_to_cal(date_today(), &today.year, &today.month, &today.day);
-
-        if (dt1.year == 0) {
-            // No dates specified, default to current month.
-            startdt = date_from_cal(today.year, today.month, 1);
-            if (dt2.year == 0)
-                enddt = date_next_month(startdt);
-        } else if (dt1.month == 0) {
-            // Year specified yyyy
-            startdt = date_from_cal(dt1.year, 1, 1);
-            if (dt2.year == 0)
-                enddt = date_from_cal(dt1.year+1, 1, 1);
-        } else if (dt1.day == 0) {
-            // Month specified yyyy-mm
-            startdt = date_from_cal(dt1.year, dt1.month, 1);
-            if (dt2.year == 0)
-                enddt = date_next_month(startdt);
-        } else {
-            // Full date specified yyyy-mm-dd
-            startdt = date_from_cal(dt1.year, dt1.month, dt1.day);
-            if (dt2.year == 0)
-                enddt = date_next_day(startdt);
-        }
-
-        if (dt2.year == 0) {
-        } else if (dt2.month == 0) {
-            // Year specified yyyy
-            enddt = date_from_cal(dt2.year+1, 1, 1);
-        } else if (dt2.day == 0) {
-            // Month specified yyyy-mm
-            enddt = date_next_month(date_from_cal(dt2.year, dt2.month, 1));
-        } else {
-            // Full date specified yyyy-mm-dd
-            enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
-        }
-    }
-
-    if (str_equals(scmd, "help")) {
-        if (str_equals(sarg, "list"))
+    if (szequals(scmd, "help")) {
+        argv++;
+        if (*argv == NULL)
+            printf(HELP_ROOT);
+        else if (szequals(*argv, "list"))
             printf(HELP_LIST);
-        else if (str_equals(sarg, "cat"))
+        else if (szequals(*argv, "cat"))
             printf(HELP_CAT);
-        else if (str_equals(sarg, "ytd"))
+        else if (szequals(*argv, "ytd"))
             printf(HELP_YTD);
-        else if (str_equals(sarg, "info"))
+        else if (szequals(*argv, "info"))
             printf(HELP_INFO);
-        else if (str_equals(sarg, "add"))
+        else if (szequals(*argv, "add"))
             printf(HELP_ADD);
-        else if (str_equals(sarg, "edit"))
+        else if (szequals(*argv, "edit"))
             printf(HELP_EDIT);
-        else if (str_equals(sarg, "del"))
+        else if (szequals(*argv, "del"))
             printf(HELP_DEL);
         else
             printf(HELP_ROOT);
-    } else if (str_equals(scmd, "info")) {
+    } else if (szequals(scmd, "info")) {
         str_t expfile = get_expense_filename(&scratch_arena);
         printf("exp config info\n\n");
         printf("    expense file  : %s\n\n", expfile.bytes);
         printf("Set the WINEXPFILE environment var to change the active expense file.\n");
         printf("Expense file will be created automatically when you add or display expenses.\n\n");
-    } else if (str_equals(scmd, "list")) {
-        list_expenses(sarg, startdt, enddt, exp_arena, scratch_arena);
-    } else if (str_equals(scmd, "cat")) {
-        list_categories(startdt, enddt, exp_arena, scratch_arena);
-    } else if (str_equals(scmd, "ytd")) {
+    } else if (szequals(scmd, "list"))
+        list_expenses(argv+1, argc-1, exp_arena, scratch_arena);
+    else if (szequals(scmd, "cat"))
+        list_categories(argv+1, argc-1, exp_arena, scratch_arena);
+    else if (szequals(scmd, "ytd"))
         list_ytd(argv+1, argc-1, exp_arena, scratch_arena);
-    } else if (str_equals(scmd, "add")) {
+    else if (szequals(scmd, "add"))
         prompt_add(argv+1, argc-1, exp_arena, scratch_arena);
-    } else if (str_equals(scmd, "edit")) {
+    else if (szequals(scmd, "edit"))
         prompt_edit(argv+1, argc-1, exp_arena, scratch_arena);
-    } else if (str_equals(scmd, "del")) {
+    else if (szequals(scmd, "del"))
         prompt_del(argv+1, argc-1, exp_arena, scratch_arena);
-    } else {
+    else
         printf(HELP_ROOT);
-    }
 
     free_arena(&exp_arena);
     free_arena(&scratch_arena);
 }
 
-void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch) {
+void read_filter_args(char *argv[], int argc, str_t *scat, time_t *startdt, time_t *enddt, arena_t *scratch) {
+    shortdate_t dt1={0,0,0};
+    shortdate_t dt2={0,0,0};
+    shortdate_t tmpdate;
+
+    *scat = STR("");
+    *startdt = 0;
+    *enddt = 0;
+
+    enum ARGSTEP {
+        READ_NONE,
+        READ_CAT,
+        READ_DATE1,
+        READ_DATE2
+    } argstep = READ_NONE;
+
+    for (int i=0; i < argc; i++) {
+        char *arg = argv[i];
+        if (argstep == READ_NONE) {
+            if (match_date(arg, &tmpdate)) {
+                dt1 = tmpdate;
+                argstep = READ_DATE1;
+            } else {
+                *scat = new_str(scratch, arg);
+                argstep = READ_CAT;
+            }
+        } else if (argstep == READ_CAT) {
+            if (match_date(arg, &tmpdate)) {
+                dt1 = tmpdate;
+                argstep = READ_DATE1;
+            }
+        } else if (argstep == READ_DATE1) {
+            if (match_date(arg, &tmpdate)) {
+                dt2 = tmpdate;
+                argstep = READ_DATE2;
+                break;
+            }
+        }
+    }
+
+    shortdate_t today;
+    date_to_cal(date_today(), &today.year, &today.month, &today.day);
+
+    if (dt1.year == 0) {
+        // No dates specified, default to current month.
+        *startdt = date_from_cal(today.year, today.month, 1);
+        if (dt2.year == 0)
+            *enddt = date_next_month(*startdt);
+    } else if (dt1.month == 0) {
+        // Year specified yyyy
+        *startdt = date_from_cal(dt1.year, 1, 1);
+        if (dt2.year == 0)
+            *enddt = date_from_cal(dt1.year+1, 1, 1);
+    } else if (dt1.day == 0) {
+        // Month specified yyyy-mm
+        *startdt = date_from_cal(dt1.year, dt1.month, 1);
+        if (dt2.year == 0)
+            *enddt = date_next_month(*startdt);
+    } else {
+        // Full date specified yyyy-mm-dd
+        *startdt = date_from_cal(dt1.year, dt1.month, dt1.day);
+        if (dt2.year == 0)
+            *enddt = date_next_day(*startdt);
+    }
+
+    if (dt2.year == 0) {
+    } else if (dt2.month == 0) {
+        // Year specified yyyy
+        *enddt = date_from_cal(dt2.year+1, 1, 1);
+    } else if (dt2.day == 0) {
+        // Month specified yyyy-mm
+        *enddt = date_next_month(date_from_cal(dt2.year, dt2.month, 1));
+    } else {
+        // Full date specified yyyy-mm-dd
+        *enddt = date_next_day(date_from_cal(dt2.year, dt2.month, dt2.day));
+    }
+
+}
+
+void list_expenses(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
+    // exp list [CAT] [YYYY | YYYY-MM | YYYY-MM-DD | STARTDATE ENDDATE]
+
+    str_t scat = STR("");
+    time_t startdt=0, enddt=0;
+    read_filter_args(argv, argc, &scat, &startdt, &enddt, &scratch);
+
     int z;
     char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
@@ -394,7 +401,13 @@ void list_expenses(str_t scat, time_t startdt, time_t enddt, arena_t exp_arena, 
 */
 }
 
-void list_categories(time_t startdt, time_t enddt, arena_t exp_arena, arena_t scratch) {
+void list_categories(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
+    // exp cat [YYYY | YYYY-MM | YYYY-MM-DD | STARTDATE ENDDATE]
+
+    str_t scat = STR("");
+    time_t startdt=0, enddt=0;
+    read_filter_args(argv, argc, &scat, &startdt, &enddt, &scratch);
+
     int z;
     char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
@@ -511,13 +524,13 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     if (z != 0)
         return;
 
-    // argv[]: add [DESC] [AMT] [CAT] [DATE]
+    // argv[]: [DESC] [AMT] [CAT] [DATE]
 
     // DESC
     while (1) {
         str_t desc = STR("");
-        if (argc >= 2) {
-            desc = new_str(&scratch, argv[1]);
+        if (argc >= 1) {
+            desc = new_str(&scratch, argv[0]);
         } else {
             read_input("Expense Description: ", buf, sizeof(buf));
             desc = new_str(&scratch, buf);
@@ -531,8 +544,8 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
     // AMT
     while (1) {
-        if (argc >= 3) {
-            amt = atof(argv[2]);
+        if (argc >= 2) {
+            amt = atof(argv[1]);
         } else {
             read_input("Amount: ", buf, sizeof(buf));
             amt = atof(buf);
@@ -543,8 +556,8 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     // CAT
     while (1) {
         str_t scat = STR("");
-        if (argc >= 4) {
-            scat = new_str(&scratch, argv[3]);
+        if (argc >= 3) {
+            scat = new_str(&scratch, argv[2]);
         } else {
             for (int i=1; i < et.cats.len; i++)
                 printf("[%d] %s\n", i, et.cats.base[i].bytes);
@@ -582,8 +595,8 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     assert(z == 0);
     while (1) {
         str_t sdate;
-        if (argc >= 5) {
-            sdate = new_str(&scratch, argv[4]);
+        if (argc >= 4) {
+            sdate = new_str(&scratch, argv[3]);
         } else {
             read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
             sdate = new_str(&scratch, buf);
@@ -622,16 +635,17 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     // RECNO should be in the range from 1 to [NUM EXPENSES]
     // exptbl array of expenses is indexed from 0 to [NUM EXPENSES] - 1
     // so exptbl.base[0] is RECNO 1, exptbl.base[1] is RECNO 2, etc.
-    // argv[]: edit [RECNO]
+    //
+    // argv[]: [RECNO]
 
     char buf[1024];
     int z;
 
-    if (argc <= 1) {
+    if (argc == 0) {
         printf(HELP_EDIT);
         return;
     }
-    int recno = atoi(argv[1]);
+    int recno = atoi(argv[0]);
     if (recno == 0) {
         printf(HELP_EDIT);
         return;
@@ -654,16 +668,17 @@ void prompt_del(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     // RECNO should be in the range from 1 to [NUM EXPENSES]
     // exptbl array of expenses is indexed from 0 to [NUM EXPENSES] - 1
     // so exptbl.base[0] is RECNO 1, exptbl.base[1] is RECNO 2, etc.
-    // argv[]: edit [RECNO]
+    //
+    // argv[]: [RECNO]
 
     char buf[5];
     int z;
 
-    if (argc <= 1) {
+    if (argc == 0) {
         printf(HELP_DEL);
         return;
     }
-    int recno = atoi(argv[1]);
+    int recno = atoi(argv[0]);
     if (recno == 0) {
         printf(HELP_DEL);
         return;

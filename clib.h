@@ -45,6 +45,8 @@ typedef ptrdiff_t idx_t;
 void panic(char *s);
 void panic_err(char *s);
 void print_error(const char *s);
+int szequals(const char *s1, const char *s2);
+#define szequals(s1, s2) (!strcmp(s1, s2))
 
 typedef struct {
     void *base;
