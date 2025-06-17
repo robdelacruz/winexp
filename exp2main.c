@@ -533,7 +533,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
 
     // argv[]: [DESC] [AMT] [CAT] [DATE]
     if (argc >= 1)
-        sdesc = new_str(&scratch, argv[0]);
+        sdesc = new_str(et.arena, argv[0]);
     if (argc >= 2)
         samt = new_str(&scratch, argv[1]);
     if (argc >= 3) {
@@ -557,7 +557,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     while (sdesc.len == 0) {
         read_input("Expense Description: ", buf, sizeof(buf));
         if (strlen(buf) > 0) {
-            sdesc = new_str(&scratch, buf);
+            sdesc = new_str(et.arena, buf);
             break;
         }
     }
@@ -581,7 +581,6 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
             read_input("Enter [n] or category name: ", buf, sizeof(buf));
         else
             read_input("Enter category name: ", buf, sizeof(buf));
-
         if (strlen(buf) == 0)
             continue;
         if (szequals(buf, "0"))
@@ -599,12 +598,10 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         // Entered existing category name.
         str_t scat = new_str(&scratch, buf);
         catid = strtbl_find(et.cats, scat);
-        if (catid != 0)
-            break;
 
         // Add new category to category table.
-        catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
-        break;
+        if (catid == 0)
+            catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
     }
 
     // DATE
@@ -612,13 +609,14 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
         if (strlen(buf) == 0)
             dt = date_today();
-        if (szequals(buf, "-") || szequals(buf, "today"))
+        else if (szequals(buf, "-") || szequals(buf, "today"))
             dt = date_today();
-        if (regexec(&reg, buf, 0, NULL, 0) == 0)
+        else if (regexec(&reg, buf, 0, NULL, 0) == 0)
             dt = date_from_iso(buf);
     }
     regfree(&reg);
 
+    printf("dt: %ld\n", dt);
     assert(descid > 0 && catid > 0 && dt > 0);
 
     exp_t exp;

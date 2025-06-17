@@ -275,7 +275,7 @@ time_t date_from_iso(char *isodate) {
         return 0;
     }
     t = mktime(&tm);
-    if (t == -1) {
+    if (t < 0) {
         fprintf(stderr, "date_assign_iso('%s') mktime() error\n", isodate);
         return 0;
     }
