@@ -26,7 +26,7 @@ void init_exptbl(exptbl_t *et, short cap, arena_t *a) {
     init_strtbl(&et->cats, a, 8);
 }
 exp_t *get_exp(exptbl_t *et, short idx) {
-    if (idx >= et->len)
+    if (idx < 0 || idx >= et->len)
         return NULL;
     return &et->base[idx];
 }
@@ -215,7 +215,7 @@ int load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
     for (int i=0; i < et->len; i++) {
         exp_t *exp = &et->base[i];
         str_t catname = strtbl_get(tmpcats, exp->catid);
-        exp->catid = strtbl_find(et->cats, catname);
+        exp->catid = strtbl_find(et->cats, catname.bytes);
     }
     return 0;
 }
@@ -242,7 +242,7 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     // description
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.descid = strtbl_add(&et->strings, new_str(arena, pfield));
+    retexp.descid = strtbl_add(&et->strings, pfield);
 
     // amount
     pfield = nextp;
@@ -252,9 +252,9 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     // category
     pfield = nextp;
     nextp = next_field(pfield);
-    retexp.catid = strtbl_find(et->cats, (str_t){pfield, strlen(pfield)});
+    retexp.catid = strtbl_find(et->cats, pfield);
     if (retexp.catid == 0) {
-        retexp.catid = strtbl_add(&et->cats, new_str(arena, pfield));
+        retexp.catid = strtbl_add(&et->cats, pfield);
     }
 
     return retexp;

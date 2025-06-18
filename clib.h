@@ -65,9 +65,9 @@ typedef struct {
     short len;
 } str_t;
 
-str_t new_str(arena_t *a, char *sz);
+str_t new_str(arena_t *a, const char *s);
 str_t dup_str(arena_t *a, str_t src);
-int str_equals(str_t s, char *sz);
+int str_equals(str_t s, const char *sz);
 
 typedef int (*cmpfunc_t)(void *a, void *b);
 
@@ -80,10 +80,10 @@ typedef struct {
 
 void init_strtbl(strtbl_t *st, arena_t *a, short cap);
 strtbl_t dup_strtbl(strtbl_t st, arena_t *a);
-short strtbl_add(strtbl_t *st, str_t s);
-void strtbl_replace(strtbl_t *st, short idx, str_t s);
+short strtbl_add(strtbl_t *st, const char *s);
+void strtbl_replace(strtbl_t *st, short idx, const char *s);
 str_t strtbl_get(strtbl_t st, short idx);
-short strtbl_find(strtbl_t st, str_t s);
+short strtbl_find(strtbl_t st, const char *s);
 
 void sort_strtbl(strtbl_t *t, cmpfunc_t cmp);
 int cmp_str(void *a, void *b);

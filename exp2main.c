@@ -514,13 +514,10 @@ static void read_input(const char *prompt, char *buf, short bufsize) {
 void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     char buf[1024];
     short descid=0;
-    float amt=0.0;
+    float amt=-1;
     short catid=0;
     time_t dt=0;
     int z;
-
-    str_t sdesc = STR("");
-    str_t samt = STR("");
 
     regex_t reg;
     z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
@@ -533,43 +530,37 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
 
     // argv[]: [DESC] [AMT] [CAT] [DATE]
     if (argc >= 1)
-        sdesc = new_str(et.arena, argv[0]);
+        descid = strtbl_add(&et.strings, argv[0]);
     if (argc >= 2)
-        samt = new_str(&scratch, argv[1]);
+        amt = atof(argv[1]);
     if (argc >= 3) {
-        // Check if existing category name
-        // If not existing, add it.
-        str_t scat = new_str(&scratch, argv[2]);
-        catid = strtbl_find(et.cats, scat);
+        // Add new category name to cats table if necessary. 
+        catid = strtbl_find(et.cats, argv[2]);
         if (catid == 0)
-            catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
+            catid = strtbl_add(&et.cats, argv[2]);
     }
     if (argc >= 4) {
-        char *szdate = argv[3];
-        str_t sdate = new_str(&scratch, szdate);
-        if (szequals(szdate, "-") || szequals(szdate, "today"))
+        if (szequals(argv[3], "-") || szequals(argv[3], "today"))
             dt = date_today();
-        else if (regexec(&reg, szdate, 0, NULL, 0) == 0)
-            dt = date_from_iso(szdate);
+        else if (regexec(&reg, argv[3], 0, NULL, 0) == 0)
+            dt = date_from_iso(argv[3]);
     }
 
     // DESC
-    while (sdesc.len == 0) {
+    while (descid == 0) {
         read_input("Expense Description: ", buf, sizeof(buf));
-        if (strlen(buf) > 0) {
-            sdesc = new_str(et.arena, buf);
-            break;
-        }
+        if (strlen(buf) == 0)
+            continue;
+        descid = strtbl_add(&et.strings, buf);
     }
-    descid = strtbl_add(&et.strings, sdesc);
 
     // AMT
-    if (samt.len == 0) {
+    while (amt == -1) {
         read_input("Amount: ", buf, sizeof(buf));
-        if (strlen(buf) > 0)
-            samt = new_str(&scratch, buf);
+        if (strlen(buf) == 0)
+            continue;
+        amt = atof(buf);
     }
-    amt = atof(samt.bytes);
 
     // CAT
     while (catid == 0) {
@@ -595,13 +586,10 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         if (catid >= 1 && catid < et.cats.len)
             break;
 
-        // Entered existing category name.
-        str_t scat = new_str(&scratch, buf);
-        catid = strtbl_find(et.cats, scat);
-
-        // Add new category to category table.
+        // Add new category name to cats table if necessary. 
+        catid = strtbl_find(et.cats, buf);
         if (catid == 0)
-            catid = strtbl_add(&et.cats, new_str(et.arena, scat.bytes));
+            catid = strtbl_add(&et.cats, buf);
     }
 
     // DATE
@@ -616,7 +604,6 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
     regfree(&reg);
 
-    printf("dt: %ld\n", dt);
     assert(descid > 0 && catid > 0 && dt > 0);
 
     exp_t exp;
@@ -627,8 +614,11 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
 
     add_exp(&et, exp);
     z = save_expense_file(et, scratch);
-    if (z != 0)
+    if (z != 0) {
+        printf("Record not added.\n");
         return;
+    }
+    printf("Record added.\n");
     char isodate[ISO_DATE_LEN+1];
     date_to_iso(exp.date, isodate, sizeof(isodate));
     printf("\n\n%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, descid).bytes, exp.amt, strtbl_get(et.cats, catid).bytes);
@@ -642,8 +632,13 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     //
     // argv[]: [RECNO]
 
+    char prompt[2048];
     char buf[1024];
     int z;
+
+    regex_t reg;
+    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
+    assert(z == 0);
 
     if (argc == 0) {
         printf(HELP_EDIT);
@@ -659,12 +654,55 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     z = load_expense_file(&exp_arena, scratch, &et);
     if (z != 0)
         return;
-
-    if (recno > et.len) {
-        fprintf(stderr, "Expense record #%d doesn't exist.\n", recno);
+    if (recno < 0 || recno > et.len) {
+        fprintf(stderr, "Record out of range.\n");
+        return;
+    }
+    exp_t *exp = get_exp(&et, recno-1);
+    if (exp == NULL) {
+        fprintf(stderr, "Record out of range.\n");
         return;
     }
 
+    // DESC
+    snprintf(prompt, sizeof(prompt), "Description [%s]: ", strtbl_get(et.strings, exp->descid).bytes);
+    read_input(prompt, buf, sizeof(buf));
+    if (strlen(buf) > 0)
+        exp->descid = strtbl_add(&et.strings, buf);
+
+    // AMT
+    snprintf(prompt, sizeof(prompt), "Amount [%.2f]: ", exp->amt);
+    read_input(prompt, buf, sizeof(buf));
+    if (strlen(buf) > 0)
+        exp->amt = atof(buf);
+
+    // CAT
+    snprintf(prompt, sizeof(prompt), "Category [%s]: ", strtbl_get(et.cats, exp->catid).bytes);
+    read_input(prompt, buf, sizeof(buf));
+    if (strlen(buf) > 0) {
+        exp->catid = strtbl_find(et.cats, buf);
+        if (exp->catid == 0)
+            exp->catid = strtbl_add(&et.cats, buf);
+    }
+
+    // DATE
+    char isodate[ISO_DATE_LEN+1];
+    date_to_iso(exp->date, isodate, sizeof(isodate));
+    snprintf(prompt, sizeof(prompt), "Date [%s]: ", isodate);
+    read_input(prompt, buf, sizeof(buf));
+    if (strlen(buf) > 0) {
+        if (regexec(&reg, buf, 0, NULL, 0) == 0)
+            exp->date = date_from_iso(buf);
+        else
+            printf("Ignoring invalid date.\n");
+    }
+
+    z = save_expense_file(et, scratch);
+    if (z != 0) {
+        printf("Record not updated.\n");
+        return;
+    }
+    printf("Record updated.\n");
 }
 
 void prompt_del(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
@@ -692,13 +730,15 @@ void prompt_del(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     z = load_expense_file(&exp_arena, scratch, &et);
     if (z != 0)
         return;
-
-    if (recno > et.len) {
-        fprintf(stderr, "Expense record #%d doesn't exist.\n", recno);
+    if (recno < 0 || recno > et.len) {
+        fprintf(stderr, "Record out of range.\n");
         return;
     }
-
     exp_t *exp = get_exp(&et, recno-1);
+    if (exp == NULL) {
+        fprintf(stderr, "Record out of range.\n");
+        return;
+    }
     char isodate[ISO_DATE_LEN+1];
     date_to_iso(exp->date, isodate, sizeof(isodate));
     printf("\n%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, exp->descid).bytes, exp->amt, strtbl_get(et.cats, exp->catid).bytes);

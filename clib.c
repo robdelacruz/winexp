@@ -56,11 +56,11 @@ void *aalloc(arena_t *a, unsigned long size) {
     return (void*) p;
 }
 
-str_t new_str(arena_t *a, char *sz) {
+str_t new_str(arena_t *a, const char *s) {
     str_t retstr;
-    retstr.len = strlen(sz);
+    retstr.len = strlen(s);
     retstr.bytes = aalloc(a, retstr.len+1);
-    strncpy(retstr.bytes, sz, retstr.len);
+    strncpy(retstr.bytes, s, retstr.len);
     retstr.bytes[retstr.len] = 0;
     return retstr;
 }
@@ -72,7 +72,7 @@ str_t dup_str(arena_t *a, str_t src) {
     retstr.bytes[retstr.len] = 0;
     return retstr;
 }
-int str_equals(str_t s, char *sz) {
+int str_equals(str_t s, const char *sz) {
     return !strcmp(s.bytes, sz);
 }
 
@@ -93,7 +93,7 @@ strtbl_t dup_strtbl(strtbl_t st, arena_t *a) {
     memcpy(dupst.base, st.base, sizeof(str_t) * st.cap);
     return dupst;
 }
-short strtbl_add(strtbl_t *st, str_t s) {
+short strtbl_add(strtbl_t *st, const char *s) {
     assert(st->cap > 0);
     assert(st->len >= 0);
 
@@ -114,24 +114,24 @@ short strtbl_add(strtbl_t *st, str_t s) {
         st->cap = newcap;
     }
 
-    st->base[st->len] = s;
+    st->base[st->len] = new_str(st->arena, s);
     st->len++;
     return st->len-1;
 }
-void strtbl_replace(strtbl_t *st, short idx, str_t s) {
+void strtbl_replace(strtbl_t *st, short idx, const char *s) {
     assert(idx < st->len);
     if (idx >= st->len)
         return;
-    st->base[idx] = s;
+    st->base[idx] = new_str(st->arena, s);
 }
 str_t strtbl_get(strtbl_t st, short idx) {
     if (idx >= st.len)
         return STR("");
     return st.base[idx];
 }
-short strtbl_find(strtbl_t st, str_t s) {
+short strtbl_find(strtbl_t st, const char *s) {
     for (int i=1; i < st.len; i++) {
-        if (strcmp(s.bytes, st.base[i].bytes) == 0)
+        if (strcmp(s, st.base[i].bytes) == 0)
             return i;
     }
     return 0;
