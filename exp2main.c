@@ -25,6 +25,7 @@ void list_ytd(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_del(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
+short prompt_cat(strtbl_t *cats, short default_catid);
 
 const char HELP_ROOT[] = 
 R"(exp - Utility for keeping track and reporting of daily expenses.
@@ -563,34 +564,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
 
     // CAT
-    while (catid == 0) {
-        for (int i=1; i < et.cats.len; i++)
-            printf("[%d] %s\n", i, et.cats.base[i].bytes);
-        printf("\n");
-
-        if (et.cats.len > 1)
-            read_input("Enter [n] or category name: ", buf, sizeof(buf));
-        else
-            read_input("Enter category name: ", buf, sizeof(buf));
-        if (strlen(buf) == 0)
-            continue;
-        if (szequals(buf, "0"))
-            continue;
-
-        catid = atoi(buf);
-        if (catid < 0 || catid >= et.cats.len) {
-            catid = 0;
-            continue;
-        }
-        // Selected category index.
-        if (catid >= 1 && catid < et.cats.len)
-            break;
-
-        // Add new category name to cats table if necessary. 
-        catid = strtbl_find(et.cats, buf);
-        if (catid == 0)
-            catid = strtbl_add(&et.cats, buf);
-    }
+    catid = prompt_cat(&et.cats, 0);
 
     // DATE
     while (dt == 0) {
@@ -621,7 +595,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     printf("Record added.\n");
     char isodate[ISO_DATE_LEN+1];
     date_to_iso(exp.date, isodate, sizeof(isodate));
-    printf("\n\n%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, descid).bytes, exp.amt, strtbl_get(et.cats, catid).bytes);
+    printf("%s; %s; %.2f; %s\n", isodate, strtbl_get(et.strings, descid).bytes, exp.amt, strtbl_get(et.cats, catid).bytes);
 }
 
 void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
@@ -677,13 +651,7 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         exp->amt = atof(buf);
 
     // CAT
-    snprintf(prompt, sizeof(prompt), "Category [%s]: ", strtbl_get(et.cats, exp->catid).bytes);
-    read_input(prompt, buf, sizeof(buf));
-    if (strlen(buf) > 0) {
-        exp->catid = strtbl_find(et.cats, buf);
-        if (exp->catid == 0)
-            exp->catid = strtbl_add(&et.cats, buf);
-    }
+    exp->catid = prompt_cat(&et.cats, exp->catid);
 
     // DATE
     char isodate[ISO_DATE_LEN+1];
@@ -820,5 +788,69 @@ int match_date(char *sz, shortdate_t *sd) {
     }
 
     return 1;
+}
+
+short prompt_cat(strtbl_t *cats, short default_catid) {
+    char prompt[2048];
+    char buf[1024];
+    str_t default_catname = STR("");
+    short catid=0;
+    short ask_catname = 1;
+
+    if (default_catid < 1 || default_catid >= cats->len) {
+        default_catid = 0;
+        snprintf(prompt, sizeof(prompt), "Category (enter '?' for list): ");
+    } else {
+        snprintf(prompt, sizeof(prompt), "Category [%s] (enter '?' for list): ", strtbl_get(*cats, default_catid).bytes);
+    }
+
+    while (catid == 0) {
+        if (ask_catname) {
+            while (1) {
+                read_input(prompt, buf, sizeof(buf));
+                if (strlen(buf) == 0) {
+                    if (default_catid > 0)
+                        return default_catid;
+                    else
+                        continue;
+                }
+                if (szequals(buf, "?")) {
+                    ask_catname = 0;
+                    break;
+                }
+                catid = strtbl_find(*cats, buf);
+                if (catid == 0)
+                    catid = strtbl_add(cats, buf);
+                break;
+            }
+        } else {
+            if (cats->len <= 1) {
+                printf("No categories yet.\n");
+                ask_catname = 1;
+                break;
+            }
+            while (1) {
+                printf("Categories:\n");
+                printf("[0] (Enter new category)\n");
+                for (int i=1; i < cats->len; i++)
+                    printf("[%d] %s\n", i, cats->base[i].bytes);
+                printf("\n");
+
+                read_input("Select category [n]: ", buf, sizeof(buf));
+                if (strlen(buf) == 0)
+                    continue;
+                catid = atoi(buf);
+                if (catid == 0) {
+                    ask_catname = 1;
+                    break;
+                }
+                if (catid >= 1 && catid < cats->len)
+                    break;
+            }
+        }
+    }
+    assert(catid >= 1 && catid < cats->len);
+
+    return catid;
 }
 
