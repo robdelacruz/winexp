@@ -584,10 +584,12 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
 
     // CAT
-    catid = prompt_cat(&et.cats, 0);
+    if (catid == 0)
+        catid = prompt_cat(&et.cats, 0);
 
     // DATE
-    dt = prompt_date(0);
+    if (dt == 0)
+        dt = prompt_date(0);
 
     assert(descid > 0 && catid > 0 && dt > 0);
 
