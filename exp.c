@@ -222,7 +222,8 @@ int load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
 
 static exp_t read_expense(char *buf, exptbl_t *et) {
     exp_t retexp;
-    arena_t *arena = et->arena;
+    char *pdate, *ptime;
+    char datetimebuf[512];
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee
@@ -231,13 +232,14 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     char *nextp;
 
     // date
-    pfield = buf;
-    nextp = next_field(pfield);
-    retexp.date = date_from_iso(pfield);
+    pdate = buf;
+    nextp = next_field(pdate);
 
-    // skip time field
-    pfield = nextp;
-    nextp = next_field(pfield);
+    // time
+    ptime = nextp;
+    nextp = next_field(ptime);
+    snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", pdate, ptime);
+    retexp.date = date_from_iso_datetime(datetimebuf);
 
     // description
     pfield = nextp;
@@ -290,6 +292,7 @@ static char *next_field(char *startp) {
 int save_expense_file(exptbl_t et, arena_t scratch) {
     FILE *f;
     char isodate[ISO_DATE_LEN+1];
+    char hhmmtime[HHMM_TIME_LEN+1];
 
     str_t expfile = get_expense_filename(&scratch);
 
@@ -314,9 +317,10 @@ int save_expense_file(exptbl_t et, arena_t scratch) {
     for (int i=0; i < et.len; i++) {
         exp_t exp = et.base[i];
         date_to_iso(exp.date, isodate, sizeof(isodate));
+        date_to_hhmm(exp.date, hhmmtime, sizeof(hhmmtime));
         str_t sdesc = strtbl_get(et.strings, exp.descid);
         str_t scat = strtbl_get(et.cats, exp.catid);
-        fprintf(f, "%s; %s; %s; %.2f; %s\n", isodate, "00:00", sdesc.bytes, exp.amt, scat.bytes);
+        fprintf(f, "%s; %s; %s; %.2f; %s\n", isodate, hhmmtime, sdesc.bytes, exp.amt, scat.bytes);
     }
     fclose(f);
     return 0;

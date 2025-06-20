@@ -20,6 +20,7 @@ char* strptime(const char *buf, const char *fmt, struct tm *tm);
 #define SIZE_HUGE    (1024*1024*1024)
 
 #define ISO_DATE_LEN 10
+#define HHMM_TIME_LEN 5
 
 #define countof(v) (sizeof(v) / sizeof((v)[0]))
 #define lengthof(s) (countof(s) - 1)
@@ -111,8 +112,10 @@ int cmp_entry_desc(void *a, void *b);
 time_t date_today();
 time_t date_from_cal(short year, short month, short day);
 time_t date_from_iso(char *isodate);
+time_t date_from_iso_datetime(char *isodatetime);
 void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len);
 void date_to_iso(time_t dt, char *buf, size_t buf_len);
+void date_to_hhmm(time_t dt, char *buf, size_t buf_len);
 void date_to_cal(time_t dt, short *retyear, short *retmonth, short *retday);
 time_t date_prev_month(time_t dt);
 time_t date_next_month(time_t dt);

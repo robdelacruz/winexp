@@ -281,6 +281,22 @@ time_t date_from_iso(char *isodate) {
     }
     return t;
 }
+time_t date_from_iso_datetime(char *isodatetime) {
+    time_t t;
+    struct tm tm;
+    memset(&tm, 0, sizeof(struct tm));
+
+    if (strptime(isodatetime, "%FT%H:%M", &tm) == NULL) {
+        fprintf(stderr, "date_from_iso_datetime('%s') strptime() error\n", isodatetime);
+        return 0;
+    }
+    t = mktime(&tm);
+    if (t < 0) {
+        fprintf(stderr, "date_assign_iso_datetime('%s') mktime() error\n", isodatetime);
+        return 0;
+    }
+    return t;
+}
 void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len) {
     struct tm tm;
     localtime_r(&dt, &tm);
@@ -290,6 +306,11 @@ void date_to_iso(time_t dt, char *buf, size_t buf_len) {
     struct tm tm;
     localtime_r(&dt, &tm);
     strftime(buf, buf_len, "%F", &tm);
+}
+void date_to_hhmm(time_t dt, char *buf, size_t buf_len) {
+    struct tm tm;
+    localtime_r(&dt, &tm);
+    strftime(buf, buf_len, "%H:%M", &tm);
 }
 void date_to_cal(time_t dt, short *retyear, short *retmonth, short *retday) {
     struct tm tm;

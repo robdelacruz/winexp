@@ -26,6 +26,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 void prompt_del(char *argv[], int argc, arena_t exp_arena, arena_t scratch);
 short prompt_cat(strtbl_t *cats, short default_catid);
+time_t prompt_date(time_t default_dt);
 
 const char HELP_ROOT[] = 
 R"(exp - Utility for keeping track and reporting of daily expenses.
@@ -188,12 +189,19 @@ Example:
 
 )";
 
+regex_t g_regdate, g_regtime;
 
 int main(int argc, char *argv[]) {
+    int z;
     arena_t exp_arena;
     arena_t scratch_arena;
     init_arena(&exp_arena, SIZE_LARGE);
     init_arena(&scratch_arena, SIZE_MEDIUM);
+
+    z = regcomp(&g_regdate, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
+    assert(z == 0);
+    z = regcomp(&g_regtime, "^[0-2][0-9]:[0-5][0-9]$", REG_EXTENDED);
+    assert(z == 0);
 
     // argv[]: exp2 CMD [args...]
     // Skip over program name.
@@ -201,11 +209,9 @@ int main(int argc, char *argv[]) {
     argc--;
 
     char *scmd = *argv;
-    if (scmd == NULL) {
+    if (scmd == NULL)
         printf(HELP_ROOT);
-        return 0;
-    }
-    if (szequals(scmd, "help")) {
+    else if (szequals(scmd, "help")) {
         argv++;
         if (*argv == NULL)
             printf(HELP_ROOT);
@@ -246,6 +252,8 @@ int main(int argc, char *argv[]) {
     else
         printf(HELP_ROOT);
 
+    regfree(&g_regdate);
+    regfree(&g_regtime);
     free_arena(&exp_arena);
     free_arena(&scratch_arena);
 }
@@ -519,17 +527,16 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     short catid=0;
     time_t dt=0;
     int z;
-
-    regex_t reg;
-    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
-    assert(z == 0);
+    char datebuf[256]="";
+    char timebuf[256]="";
+    char datetimebuf[512];
 
     exptbl_t et;
     z = load_expense_file(&exp_arena, scratch, &et);
     if (z != 0)
         return;
 
-    // argv[]: [DESC] [AMT] [CAT] [DATE]
+    // argv[]: [DESC] [AMT] [CAT] [DATE] [TIME]
     if (argc >= 1)
         descid = strtbl_add(&et.strings, argv[0]);
     if (argc >= 2)
@@ -542,9 +549,22 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     }
     if (argc >= 4) {
         if (szequals(argv[3], "-") || szequals(argv[3], "today"))
-            dt = date_today();
-        else if (regexec(&reg, argv[3], 0, NULL, 0) == 0)
-            dt = date_from_iso(argv[3]);
+            date_to_iso(date_today(), datebuf, sizeof(datebuf));
+        else if (regexec(&g_regdate, argv[3], 0, NULL, 0) == 0)
+            snprintf(datebuf, sizeof(datebuf), "%s", argv[3]);
+    }
+    if (argc >= 5) {
+        if (regexec(&g_regtime, argv[4], 0, NULL, 0) == 0)
+            snprintf(timebuf, sizeof(timebuf), "%s", argv[4]);
+    }
+
+    if (strlen(datebuf) > 0) {
+        if (strlen(timebuf) > 0) {
+            snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", datebuf, timebuf);
+            dt = date_from_iso_datetime(datetimebuf);
+        } else {
+            dt = date_from_iso(datebuf);
+        }
     }
 
     // DESC
@@ -567,16 +587,7 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     catid = prompt_cat(&et.cats, 0);
 
     // DATE
-    while (dt == 0) {
-        read_input("Date (yyyy-mm-dd or leave blank for today): ", buf, sizeof(buf));
-        if (strlen(buf) == 0)
-            dt = date_today();
-        else if (szequals(buf, "-") || szequals(buf, "today"))
-            dt = date_today();
-        else if (regexec(&reg, buf, 0, NULL, 0) == 0)
-            dt = date_from_iso(buf);
-    }
-    regfree(&reg);
+    dt = prompt_date(0);
 
     assert(descid > 0 && catid > 0 && dt > 0);
 
@@ -609,10 +620,6 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     char prompt[2048];
     char buf[1024];
     int z;
-
-    regex_t reg;
-    z = regcomp(&reg, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", REG_EXTENDED);
-    assert(z == 0);
 
     if (argc == 0) {
         printf(HELP_EDIT);
@@ -654,16 +661,7 @@ void prompt_edit(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     exp->catid = prompt_cat(&et.cats, exp->catid);
 
     // DATE
-    char isodate[ISO_DATE_LEN+1];
-    date_to_iso(exp->date, isodate, sizeof(isodate));
-    snprintf(prompt, sizeof(prompt), "Date [%s]: ", isodate);
-    read_input(prompt, buf, sizeof(buf));
-    if (strlen(buf) > 0) {
-        if (regexec(&reg, buf, 0, NULL, 0) == 0)
-            exp->date = date_from_iso(buf);
-        else
-            printf("Ignoring invalid date.\n");
-    }
+    exp->date = prompt_date(exp->date);
 
     z = save_expense_file(et, scratch);
     if (z != 0) {
@@ -793,7 +791,6 @@ int match_date(char *sz, shortdate_t *sd) {
 short prompt_cat(strtbl_t *cats, short default_catid) {
     char prompt[2048];
     char buf[1024];
-    str_t default_catname = STR("");
     short catid=0;
     short ask_catname = 1;
 
@@ -852,5 +849,58 @@ short prompt_cat(strtbl_t *cats, short default_catid) {
     assert(catid >= 1 && catid < cats->len);
 
     return catid;
+}
+
+time_t prompt_date(time_t default_dt) {
+    char prompt[255];
+    char datebuf[256];
+    char timebuf[256];
+    char datetimebuf[512];
+    int z;
+
+    if (default_dt == 0)
+        default_dt = date_today();
+
+    char isodate[ISO_DATE_LEN+1];
+    date_to_iso(default_dt, isodate, sizeof(isodate));
+    char hhmmtime[HHMM_TIME_LEN+1];
+    date_to_hhmm(default_dt, hhmmtime, sizeof(hhmmtime));
+
+    snprintf(prompt, sizeof(prompt), "Date [%s]: ", isodate);
+    while (1) {
+        read_input(prompt, datebuf, sizeof(datebuf));
+        if (strlen(datebuf) == 0) {
+            date_to_iso(default_dt, datebuf, sizeof(datebuf));
+            break;
+        }
+        if (szequals(datebuf, "-") || szequals(datebuf, "today")) {
+            date_to_iso(date_today(), datebuf, sizeof(datebuf));
+            break;
+        }
+        if (regexec(&g_regdate, datebuf, 0, NULL, 0) != 0) {
+            printf("Enter date in YYYY-MM-DD format.\n");
+            continue;
+        }
+        break;
+    }
+
+    snprintf(prompt, sizeof(prompt), "Time [%s]: ", hhmmtime);
+    while (1) {
+        read_input(prompt, timebuf, sizeof(timebuf));
+        if (strlen(timebuf) == 0) {
+            snprintf(timebuf, sizeof(timebuf), "%s", hhmmtime);
+            break;
+        }
+        if (regexec(&g_regtime, timebuf, 0, NULL, 0) != 0) {
+            printf("Enter time in HH:MM 24-hour format.\n");
+            continue;
+        }
+        break;
+    }
+    assert(strlen(datebuf) > 0 && strlen(timebuf) > 0);
+    assert(regexec(&g_regdate, datebuf, 0, NULL, 0) == 0);
+    assert(regexec(&g_regtime, timebuf, 0, NULL, 0) == 0);
+    snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", datebuf, timebuf);
+    return date_from_iso_datetime(datetimebuf);
 }
 
