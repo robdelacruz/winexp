@@ -72,6 +72,7 @@ void del_exp(exptbl_t *et, short idx) {
     et->len--;
 }
 
+// Order by expense date
 int cmp_exp_date(exptbl_t *et, void *a, void *b) {
     exp_t *expa = a;
     exp_t *expb = b;
@@ -79,6 +80,18 @@ int cmp_exp_date(exptbl_t *et, void *a, void *b) {
     if (expa->date > expb->date) return 1;
     return 0;
 }
+// Order by expense date, then category name
+int cmp_exp_date_cat(exptbl_t *et, void *a, void *b) {
+    exp_t *expa = a;
+    exp_t *expb = b;
+    if (expa->date < expb->date) return -1;
+    if (expa->date > expb->date) return 1;
+
+    str_t cata = strtbl_get(et->cats, expa->catid);
+    str_t catb = strtbl_get(et->cats, expb->catid);
+    return strcasecmp(cata.bytes, catb.bytes);
+}
+// Order by category name
 int cmp_exp_cat(exptbl_t *et, void *a, void *b) {
     exp_t *expa = a;
     exp_t *expb = b;

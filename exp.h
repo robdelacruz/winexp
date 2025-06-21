@@ -39,6 +39,7 @@ typedef int (*exptbl_cmpfunc_t)(exptbl_t *et, void *a, void *b);
 void sort_exptbl(exptbl_t *et, exptbl_cmpfunc_t cmp);
 void sort_exptbl_part(exptbl_t *et, int start, int end, exptbl_cmpfunc_t cmp);
 int cmp_exp_date(exptbl_t *et, void *a, void *b);
+int cmp_exp_date_cat(exptbl_t *et, void *a, void *b);
 int cmp_exp_cat(exptbl_t *et, void *a, void *b);
 
 #endif

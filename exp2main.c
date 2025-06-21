@@ -345,47 +345,28 @@ void list_expenses(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     time_t startdt=0, enddt=0;
     read_filter_args(argv, argc, &scat, &startdt, &enddt, &scratch);
 
-    int z;
-    char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
-    date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
-    date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
-
     exptbl_t et;
-    z = load_expense_file(&exp_arena, scratch, &et);
+    int z = load_expense_file(&exp_arena, scratch, &et);
     if (z != 0)
         return;
 
+    char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
+    date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
+    date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
     printf("Display: Expenses\n");
     printf("Date range [%s] to [%s]\n", startdt_iso, enddt_iso);
     if (scat.len > 0)
         printf("Filter by category [%s]\n", scat.bytes);
     printf("\n");
 
-    // istart = index to first exp record within date range
-    // iend = index to last exp record within date range
-    int istart=-1, iend=-1;
+    double total = 0.0;
+    int nexpenses = 0;
     for (int i=0; i < et.len; i++) {
         exp_t xp = et.base[i];
-
         if (xp.date < startdt)
             continue;
         if (xp.date >= enddt)
             break;
-
-        if (istart == -1)
-            istart = i;
-        iend = i;
-    }
-    assert(iend >= istart);
-    if (istart == -1 || iend == -1) {
-        printf("No expenses found.\n");
-        return;
-    }
-
-    double total = 0.0;
-    for (int i=istart; i <= iend; i++) {
-        exp_t xp = et.base[i];
-        assert(xp.date >= startdt && xp.date < enddt);
 
         str_t catname = strtbl_get(et.cats, xp.catid);
         if (scat.len > 0 && strcmp(catname.bytes, scat.bytes) != 0)
@@ -396,19 +377,17 @@ void list_expenses(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         str_t desc = strtbl_get(et.strings, xp.descid);
         printf("%-12s %-30.30s %9.2f  %-10s  #%-5d\n", sdate, desc.bytes, xp.amt, catname.bytes, i+1);
 
+        nexpenses++;
         total += xp.amt;
+    }
+
+    if (nexpenses == 0) {
+        printf("No expenses found.\n");
+        return;
     }
 
     printf("------------------------------------------------------------------------\n");
     printf("%-12s %-30s %9.2f    %-10s\n", "Totals", "", total, "");
-
-/*
-    printf("categories:\n");
-    for (int i=1; i < et.cats.len; i++) {
-        str_t s = strtbl_get(et.cats, i);
-        printf("[%d] '%.*s'\n", i, s.len, s.bytes);
-    }
-*/
 }
 
 void list_categories(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
@@ -418,17 +397,14 @@ void list_categories(char *argv[], int argc, arena_t exp_arena, arena_t scratch)
     time_t startdt=0, enddt=0;
     read_filter_args(argv, argc, &scat, &startdt, &enddt, &scratch);
 
-    int z;
+    exptbl_t et;
+    int z = load_expense_file(&exp_arena, scratch, &et);
+    if (z != 0)
+        return;
+
     char startdt_iso[ISO_DATE_LEN+1], enddt_iso[ISO_DATE_LEN+1];
     date_to_iso(startdt, startdt_iso, sizeof(startdt_iso));
     date_to_iso(date_prev_day(enddt), enddt_iso, sizeof(enddt_iso));
-
-    exptbl_t et;
-    z = load_expense_file(&exp_arena, scratch, &et);
-    if (z != 0)
-        return;
-    sort_exptbl(&et, cmp_exp_date);
-
     printf("Display: Categories\n");
     printf("Date range [%s] to [%s]\n", startdt_iso, enddt_iso);
     printf("\n");
@@ -499,6 +475,65 @@ void list_categories(char *argv[], int argc, arena_t exp_arena, arena_t scratch)
 }
 
 void list_ytd(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
+    // exp ytd [YYYY]
+
+    double month_total[13];
+    double total = 0.0;
+    char monthname[32];
+    short year;
+
+    if (argc == 0)
+        date_to_cal(date_today(), &year, NULL, NULL);
+    else
+        year = atoi(argv[0]);
+    if (year == 0)
+        date_to_cal(date_today(), &year, NULL, NULL);
+
+    for (int i=0; i < countof(month_total); i++)
+        month_total[i] = 0.0;
+
+    exptbl_t et;
+    int z = load_expense_file(&exp_arena, scratch, &et);
+    if (z != 0)
+        return;
+
+    time_t startdt = date_from_cal(year, 1, 1);
+    time_t enddt = date_from_cal(year+1, 1, 1);
+
+    printf("Display: Year-to-date\n");
+    printf("Year: %d\n", year);
+    printf("\n");
+
+    // Sum month totals to month_total[month]
+    for (int i=0; i < et.len; i++) {
+        exp_t xp = et.base[i];
+        if (xp.date < startdt)
+            continue;
+        if (xp.date >= enddt)
+            break;
+
+        short month;
+        date_to_cal(xp.date, NULL, &month, NULL);
+        month_total[month] += xp.amt;
+        total += xp.amt;
+    }
+
+    // Determine longest month name
+    int longest_monthlen = 0;
+    for (int i=1; i <= 12; i++) {
+        time_t dt = date_from_cal(year, i, 1);
+        date_strftime(dt, "%B", monthname, sizeof(monthname));
+        if (strlen(monthname) > longest_monthlen)
+            longest_monthlen = strlen(monthname);
+    }
+
+    for (int i=1; i <= 12; i++) {
+        time_t dt = date_from_cal(year, i, 1);
+        date_strftime(dt, "%B", monthname, sizeof(monthname));
+        printf("%-*s   %12.2f\n", longest_monthlen, monthname, month_total[i]);
+    }
+    printf("------------------------\n");
+    printf("%-*s   %12.2f\n", longest_monthlen, "Total", total);
 }
 
 // Remove trailing \n or \r chars.
