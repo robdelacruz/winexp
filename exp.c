@@ -223,7 +223,6 @@ int load_expense_file(arena_t *exp_arena, arena_t scratch, exptbl_t *et) {
 static exp_t read_expense(char *buf, exptbl_t *et) {
     exp_t retexp;
     char *pdate, *ptime;
-    char datetimebuf[512];
 
     // Sample expense line:
     // 2016-05-01; 00:00; Mochi Cream coffee; 100.00; coffee
@@ -238,8 +237,7 @@ static exp_t read_expense(char *buf, exptbl_t *et) {
     // time
     ptime = nextp;
     nextp = next_field(ptime);
-    snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", pdate, ptime);
-    retexp.date = date_from_iso_datetime(datetimebuf);
+    retexp.date = date_from_sdatetime(pdate, ptime);
 
     // description
     pfield = nextp;

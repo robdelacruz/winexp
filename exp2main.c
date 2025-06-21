@@ -148,8 +148,9 @@ Usage:
     AMT  : numeric amount
     CAT  : category name
     DATE : optional - date in iso date format YYYY-MM-DD
+    TIME : optional - time in HH:MM format
 
-    if DATE is not specified, the current date will be used.
+    if DATE/TIME is not specified, the current date/time will be used.
 
 Example:
     exp add "expense description" 1.23 category_name 2019-04-01
@@ -527,9 +528,6 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
     short catid=0;
     time_t dt=0;
     int z;
-    char datebuf[256]="";
-    char timebuf[256]="";
-    char datetimebuf[512];
 
     exptbl_t et;
     z = load_expense_file(&exp_arena, scratch, &et);
@@ -547,24 +545,25 @@ void prompt_add(char *argv[], int argc, arena_t exp_arena, arena_t scratch) {
         if (catid == 0)
             catid = strtbl_add(&et.cats, argv[2]);
     }
-    if (argc >= 4) {
+    if (argc == 4) {
         if (szequals(argv[3], "-") || szequals(argv[3], "today"))
-            date_to_iso(date_today(), datebuf, sizeof(datebuf));
-        else if (regexec(&g_regdate, argv[3], 0, NULL, 0) == 0)
-            snprintf(datebuf, sizeof(datebuf), "%s", argv[3]);
-    }
-    if (argc >= 5) {
-        if (regexec(&g_regtime, argv[4], 0, NULL, 0) == 0)
-            snprintf(timebuf, sizeof(timebuf), "%s", argv[4]);
-    }
+            argv[3] = "";
+        else if (regexec(&g_regdate, argv[3], 0, NULL, 0) != 0)
+            argv[3] = "";
 
-    if (strlen(datebuf) > 0) {
-        if (strlen(timebuf) > 0) {
-            snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", datebuf, timebuf);
-            dt = date_from_iso_datetime(datetimebuf);
-        } else {
-            dt = date_from_iso(datebuf);
-        }
+        char stime[HHMM_TIME_LEN+1];
+        date_to_hhmm(date_today(), stime, sizeof(stime));
+        dt = date_from_sdatetime(argv[3], stime);
+    }
+    else if (argc >= 5) {
+        if (szequals(argv[3], "-") || szequals(argv[3], "today"))
+            argv[3] = "";
+        else if (regexec(&g_regdate, argv[3], 0, NULL, 0) != 0)
+            argv[3] = "";
+
+        if (regexec(&g_regtime, argv[4], 0, NULL, 0) != 0)
+            argv[4] = "";
+        dt = date_from_sdatetime(argv[3], argv[4]);
     }
 
     // DESC
@@ -857,7 +856,6 @@ time_t prompt_date(time_t default_dt) {
     char prompt[255];
     char datebuf[256];
     char timebuf[256];
-    char datetimebuf[512];
     int z;
 
     if (default_dt == 0)
@@ -902,7 +900,6 @@ time_t prompt_date(time_t default_dt) {
     assert(strlen(datebuf) > 0 && strlen(timebuf) > 0);
     assert(regexec(&g_regdate, datebuf, 0, NULL, 0) == 0);
     assert(regexec(&g_regtime, timebuf, 0, NULL, 0) == 0);
-    snprintf(datetimebuf, sizeof(datetimebuf), "%sT%s", datebuf, timebuf);
-    return date_from_iso_datetime(datetimebuf);
+    return date_from_sdatetime(datebuf, timebuf);
 }
 

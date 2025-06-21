@@ -297,6 +297,28 @@ time_t date_from_iso_datetime(char *isodatetime) {
     }
     return t;
 }
+time_t date_from_sdatetime(char *sdate, char *stime) {
+    char datebuf[ISO_DATE_LEN + HHMM_TIME_LEN + 2];
+
+    if (strlen(sdate) == 0) {
+        // none specified
+        if (strlen(stime) == 0)
+            return date_today();
+
+        // only time specified
+        char isodate[ISO_DATE_LEN+1];
+        date_to_iso(date_today(), isodate, sizeof(isodate));
+        snprintf(datebuf, sizeof(datebuf), "%.*sT%.*s", ISO_DATE_LEN, isodate, HHMM_TIME_LEN, stime);
+        return date_from_iso_datetime(datebuf);
+    }
+    // only date specified
+    if (strlen(stime) == 0)
+        return date_from_iso(sdate);
+
+    // date and time specified
+    snprintf(datebuf, sizeof(datebuf), "%.*sT%.*s", ISO_DATE_LEN, sdate, HHMM_TIME_LEN, stime);
+    return date_from_iso_datetime(datebuf);
+}
 void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len) {
     struct tm tm;
     localtime_r(&dt, &tm);

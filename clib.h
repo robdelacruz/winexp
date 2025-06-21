@@ -113,6 +113,7 @@ time_t date_today();
 time_t date_from_cal(short year, short month, short day);
 time_t date_from_iso(char *isodate);
 time_t date_from_iso_datetime(char *isodatetime);
+time_t date_from_sdatetime(char *sdate, char *stime);
 void date_strftime(time_t dt, const char *fmt, char *buf, size_t buf_len);
 void date_to_iso(time_t dt, char *buf, size_t buf_len);
 void date_to_hhmm(time_t dt, char *buf, size_t buf_len);
